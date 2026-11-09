@@ -1,4 +1,4 @@
-"""Download 1 dog sound and 8 other animal/novelty sounds (requests + FFmpeg)."""
+"""Download 1 dog sound and 9 other animal/novelty sounds (requests + FFmpeg)."""
 import hashlib
 import json
 import re
@@ -13,6 +13,7 @@ from audio_credits import write_audio_credits
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / 'src/renderer/assets/animals'
 SOUNDS = [
+    ('other-09.mp3', 'mouse', 'https://directory.audio/sound-effects/animals/507-mouse-squeaking'),
     ('dog-01.mp3', 'dog', 'barking-of-a-spitz-s0682'),
     ('other-07.mp3', 'bird', 'eurasian-jay-1-s3453'),
     ('other-08.mp3', 'human-cat-imitation', 'cat-meow-made-with-mouth-s0926'),
@@ -26,7 +27,7 @@ SOUNDS = [
 
 
 def fetch(filename, category, slug, saved):
-    source = f'https://bigsoundbank.com/{slug}.html'
+    source = slug if slug.startswith('https://') else f'https://bigsoundbank.com/{slug}.html'
     target = DEST / filename
     if filename in saved and target.exists():
         record = saved[filename]
@@ -35,10 +36,16 @@ def fetch(filename, category, slug, saved):
     page = requests.get(source, timeout=30)
     page.raise_for_status()
     text = unescape(re.sub('<[^>]+>', ' ', page.text))
-    assert 'CC0 (public domain)' in text, f'CC0 not verified: {source}'
-    title = unescape(re.sub('<[^>]+>', '', re.search(r'<h1[^>]*>(.*?)</h1>', page.text, re.S)[1])).strip()
-    author = re.search(r'Author\s*:\s*(.*?)\s*Sound number', text, re.S)[1].strip()
-    download = 'https://bigsoundbank.com' + re.search(r'/UPLOAD/mp3/\d+\.mp3', page.text)[0]
+    if source.startswith('https://directory.audio/'):
+        assert 'Creative Commons 0' in text
+        title = 'Mouse Squeaking'
+        author = 'Directory.audio (publisher; original creator not listed)'
+        download = 'https://directory.audio/media/fc_local_media/' + re.search(r'data-wfpreview="([^"]+)"', page.text)[1]
+    else:
+        assert 'CC0 (public domain)' in text, f'CC0 not verified: {source}'
+        title = unescape(re.sub('<[^>]+>', '', re.search(r'<h1[^>]*>(.*?)</h1>', page.text, re.S)[1])).strip()
+        author = re.search(r'Author\s*:\s*(.*?)\s*Sound number', text, re.S)[1].strip()
+        download = 'https://bigsoundbank.com' + re.search(r'/UPLOAD/mp3/\d+\.mp3', page.text)[0]
     audio = requests.get(download, timeout=30)
     audio.raise_for_status()
     filters = 'silenceremove=start_periods=1:start_duration=0.02:start_threshold=-40dB,afade=t=in:d=0.015,afade=t=out:st=2.7:d=0.1'
@@ -58,7 +65,7 @@ if __name__ == '__main__':
     manifest = DEST / 'sources.json'
     saved = {r['file']: r for r in json.loads(manifest.read_text(encoding='utf-8'))} if manifest.exists() else {}
     records = [fetch(*item, saved) for item in SOUNDS]
-    assert len(records) == len({r['sha256'] for r in records}) == 9
+    assert len(records) == len({r['sha256'] for r in records}) == 10
     manifest.write_text(json.dumps(records, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     write_audio_credits()
-    print('Prepared 1 dog clip and 8 other animal/novelty clips.')
+    print('Prepared 1 dog clip and 9 other animal/novelty clips.')

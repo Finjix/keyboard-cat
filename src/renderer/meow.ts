@@ -6,7 +6,7 @@ const recordings = Object.values(
   }),
 );
 
-// Shuffle all 39 clips: 30 cats, 1 dog, and 8 animal/novelty surprises.
+// Shuffle all 40 clips: 30 cats, 1 dog, and 9 animal/novelty surprises.
 export function createMeowPlayer() {
   let context: AudioContext | undefined;
   let active: AudioBufferSourceNode | undefined;

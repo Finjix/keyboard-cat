@@ -89,8 +89,8 @@ const path = require("node:path");
       const urls = readdirSync(assets)
         .filter((name) => /^(meow|dog|other)-.*\.mp3$/.test(name))
         .map((name) => pathToFileURL(path.join(assets, name)).href);
-      if (urls.length !== 39)
-        throw Error("Build must include all 39 animal recordings");
+      if (urls.length !== 40)
+        throw Error("Build must include all 40 animal recordings");
       const durations = await page.evaluate(async (urls) => {
         const context = new AudioContext();
         try {

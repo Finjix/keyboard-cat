@@ -13,7 +13,7 @@ def write_audio_credits():
     cats = sum(r.get('category', 'cat') == 'cat' for r in records)
     dogs = sum(r.get('category') == 'dog' for r in records)
     lines = [f'Mengshu sound pool: {len(records)} clips ({cats} cats, {dogs} dogs, {len(records) - cats - dogs} other animal/novelty sounds).',
-             'Sources: Freesound public HQ MP3 previews and BigSoundBank MP3 downloads.',
+             'Sources: Freesound public HQ MP3 previews BigSoundBank MP3 downloads, and Directory.audio public previews.',
              'License verified per recording: CC0-1.0',
              'https://creativecommons.org/publicdomain/zero/1.0/',
              'No pitch shifting. Extra animal clips are trimmed, converted to mono, and faded.', '']

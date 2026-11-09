@@ -1,5 +1,18 @@
 [
   {
+    "file": "other-09.mp3",
+    "category": "mouse",
+    "title": "Mouse Squeaking",
+    "creator": "Directory.audio (publisher; original creator not listed)",
+    "source": "https://directory.audio/sound-effects/animals/507-mouse-squeaking",
+    "download": "https://directory.audio/media/fc_local_media/audio_preview/mouse-squeaking.mp3",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "original_sha256": "53bbf6425fe19252ed2db9ef38dc5315b9da0443b64cb4fd34e301b90be95b34",
+    "sha256": "92f887143bdb3915b3fb85d6c57b0ae55045a8865daeed54ca861c128b396df0",
+    "edits": "Remove leading silence (-40dB); retain first <=2.8s; mono 44100Hz MP3; 15ms fade-in and 100ms fade-out at 2.7s. No pitch shifting."
+  },
+  {
     "file": "dog-01.mp3",
     "category": "dog",
     "title": "Barking of a Spitz",
