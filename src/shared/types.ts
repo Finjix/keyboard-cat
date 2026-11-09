@@ -13,7 +13,7 @@ export const defaults: Settings = {
   autoStart: true,
   displayId: null,
   area: 0.625,
-  x: 5 / 8,
+  x: 0.5,
   y: 0.5,
 };
 export interface Daily {

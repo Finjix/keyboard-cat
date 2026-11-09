@@ -130,7 +130,7 @@ const path = require("node:path");
     if (
       bounds.actual.x < bounds.primary.x ||
       Math.abs(bounds.actual.x + bounds.actual.width / 2 -
-        (bounds.primary.x + bounds.primary.width * 5 / 8)) > 1
+        (bounds.primary.x + bounds.primary.width / 2)) > 1
     )
       throw Error("Primary display placement failed");
     if (!(await page.locator("img.keyboard-art").count()))
