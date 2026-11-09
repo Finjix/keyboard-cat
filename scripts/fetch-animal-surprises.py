@@ -1,4 +1,4 @@
-"""Download 3 dog sounds and 6 other animal/novelty sounds (requests + FFmpeg)."""
+"""Download 1 dog sound and 8 other animal/novelty sounds (requests + FFmpeg)."""
 import hashlib
 import json
 import re
@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / 'src/renderer/assets/animals'
 SOUNDS = [
     ('dog-01.mp3', 'dog', 'barking-of-a-spitz-s0682'),
-    ('dog-02.mp3', 'dog', 'barking-dog-3-s2955'),
-    ('dog-03.mp3', 'dog', 'barking-dog-inside-s0112'),
+    ('other-07.mp3', 'bird', 'eurasian-jay-1-s3453'),
+    ('other-08.mp3', 'human-cat-imitation', 'cat-meow-made-with-mouth-s0926'),
     ('other-01.mp3', 'duck', 'ducks-s0276'),
     ('other-02.mp3', 'rooster', 'song-of-rooster-s0283'),
     ('other-03.mp3', 'cow', 'cow-moos-3-s2383'),
@@ -61,4 +61,4 @@ if __name__ == '__main__':
     assert len(records) == len({r['sha256'] for r in records}) == 9
     manifest.write_text(json.dumps(records, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     write_audio_credits()
-    print('Prepared 3 dog clips and 6 other animal/novelty clips.')
+    print('Prepared 1 dog clip and 8 other animal/novelty clips.')

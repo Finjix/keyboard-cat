@@ -1,4 +1,4 @@
-Mengshu sound pool: 39 clips (30 cats, 3 dogs, 6 other animal/novelty sounds).
+Mengshu sound pool: 39 clips (30 cats, 1 dogs, 8 other animal/novelty sounds).
 Sources: Freesound public HQ MP3 previews and BigSoundBank MP3 downloads.
 License verified per recording: CC0-1.0
 https://creativecommons.org/publicdomain/zero/1.0/
@@ -35,8 +35,8 @@ meow-28.mp3 | Meow Cat #2 | Joseph SARDIN | https://bigsoundbank.com/miaulement-
 meow-29.mp3 | prrmeow.WAV | kipshu | https://freesound.org/people/kipshu/sounds/200344/
 meow-30.mp3 | Mavis_cat-meow-soft_01 | TBMcQueen | https://freesound.org/people/TBMcQueen/sounds/825631/
 dog-01.mp3 | Barking of a Spitz | Joseph SARDIN | https://bigsoundbank.com/barking-of-a-spitz-s0682.html
-dog-02.mp3 | Barking dog #3 | Joseph SARDIN | https://bigsoundbank.com/barking-dog-3-s2955.html
-dog-03.mp3 | Barking Dog Inside | Joseph SARDIN | https://bigsoundbank.com/barking-dog-inside-s0112.html
+other-07.mp3 | Eurasian Jay #1 | Joseph SARDIN & Axeline T. | https://bigsoundbank.com/eurasian-jay-1-s3453.html
+other-08.mp3 | Cat Meow Made with Mouth | Joseph SARDIN | https://bigsoundbank.com/cat-meow-made-with-mouth-s0926.html
 other-01.mp3 | Ducks | DenisChardonnet | https://bigsoundbank.com/ducks-s0276.html
 other-02.mp3 | Rooster Song | DenisChardonnet | https://bigsoundbank.com/song-of-rooster-s0283.html
 other-03.mp3 | Cow moos #3 | Joseph SARDIN | https://bigsoundbank.com/cow-moos-3-s2383.html

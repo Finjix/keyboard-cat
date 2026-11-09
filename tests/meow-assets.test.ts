@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
-it("ships 30 cats plus 3 dogs and 6 other clips with CC0 source records", () => {
+it("ships 30 cats plus 1 dog and 8 other clips with CC0 source records", () => {
   const root = resolve("src/renderer/assets/meows");
   const records = JSON.parse(
     readFileSync(resolve(root, "sources.json"), "utf8"),
@@ -30,8 +30,8 @@ it("ships 30 cats plus 3 dogs and 6 other clips with CC0 source records", () => 
   expect(
     readdirSync(extraRoot).filter((name) => name.endsWith(".mp3")),
   ).toHaveLength(9);
-  expect(extras.filter((r: any) => r.category === "dog")).toHaveLength(3);
-  expect(extras.filter((r: any) => r.category !== "dog")).toHaveLength(6);
+  expect(extras.filter((r: any) => r.category === "dog")).toHaveLength(1);
+  expect(extras.filter((r: any) => r.category !== "dog")).toHaveLength(8);
   expect(new Set([...records, ...extras].map((r: any) => r.sha256)).size).toBe(
     39,
   );
