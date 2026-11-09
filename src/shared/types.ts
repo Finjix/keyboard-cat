@@ -26,6 +26,7 @@ export interface Snapshot {
   daily: Daily;
   continuousMs: number;
   reminderUntil: number;
+  reminderText: string;
   speech: string;
   speechUntil: number;
   settings: Settings;
@@ -44,7 +45,7 @@ export interface Bridge {
   subscribe: (fn: (s: Snapshot) => void) => () => void;
   input: (fn: (e: Input) => void) => () => void;
   update: (s: Partial<Settings>) => Promise<void>;
-  interact: (action: "pet" | "dismiss") => void;
+  interact: (action: "pet" | "dismiss" | "debug-hour") => void;
   quit: () => void;
 }
 declare global {

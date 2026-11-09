@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Engine, IDLE, HOUR, BUBBLE } from "../src/main/engine";
 import { keys } from "../src/shared/keyboard";
 import { keySurface } from "../src/shared/keyboard-art";
+import { restLines } from "../src/main/rest-lines";
 const base = new Date(2026, 10, 9, 12).getTime();
 describe("work engine", () => {
   it("maps all 104 keys onto the generated keyboard image", () => {
@@ -43,8 +44,21 @@ describe("work engine", () => {
     for (let t = 0; t <= HOUR * 2; t += 60000)
       e.input({ type: "mousemove" }, t, base + t);
     expect(e.reminderUntil).toBe(base + HOUR * 2 + BUBBLE);
+    expect(restLines).toContain(e.reminderText);
     e.tick(HOUR * 2 + BUBBLE, base + HOUR * 2 + BUBBLE);
     expect(e.reminderUntil).toBe(0);
+  });
+  it("keeps reminder text stable until triggered again", () => {
+    const e = new Engine(0, base);
+    e.remind(base);
+    const text = e.reminderText;
+    e.tick(1000, base + 1000);
+    expect(e.reminderText).toBe(text);
+    e.remind(base + 2000);
+    expect(restLines).toContain(e.reminderText);
+    expect(e.reminderText).not.toBe(text);
+    expect(e.reminderUntil).toBe(base + 2000 + BUBBLE);
+    expect(e.daily.workMs).toBe(0);
   });
   it("closing reminder does not reset continuity", () => {
     const e = new Engine(0, base);

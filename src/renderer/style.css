@@ -37,7 +37,7 @@ body {
   position: absolute;
   left: 65px;
   top: 848px;
-  width: 1160px;
+  width: 990px;
   height: 35px;
   border-radius: 50%;
   background: #10241a30;
@@ -64,80 +64,6 @@ body {
   box-shadow:
     inset 0 0 0 2px #fff0ba9c,
     0 0 8px #ffe6a080;
-}
-.mouse {
-  position: absolute;
-  left: 1056px;
-  top: 718px;
-  width: 144px;
-  height: 216px;
-}
-.mouse-art {
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-.mouse-feedback {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  background: #f3cb7870;
-  mix-blend-mode: multiply;
-  transition: opacity 55ms;
-}
-.mouse-feedback.down {
-  opacity: 1;
-}
-.mouse-left {
-  clip-path: polygon(
-    8.4% 37.5%,
-    8.8% 26%,
-    13% 17%,
-    21% 11%,
-    31% 8%,
-    43% 6.9%,
-    48% 8%,
-    49.5% 12%,
-    49.5% 17%,
-    46.7% 18%,
-    43.7% 20%,
-    43.4% 33%,
-    46.7% 35%,
-    49.5% 35.3%,
-    49.5% 42.4%,
-    46.5% 43%,
-    20% 43%,
-    11% 41%
-  );
-}
-.mouse-right {
-  clip-path: polygon(
-    91.6% 37.5%,
-    91.2% 26%,
-    87% 17%,
-    79% 11%,
-    69% 8%,
-    57% 6.9%,
-    52% 8%,
-    50.5% 12%,
-    50.5% 17%,
-    53.3% 18%,
-    56.3% 20%,
-    56.6% 33%,
-    53.3% 35%,
-    50.5% 35.3%,
-    50.5% 42.4%,
-    53.5% 43%,
-    80% 43%,
-    89% 41%
-  );
-}
-.mouse-middle {
-  inset: 18.5% 45.5% 66% 45.5%;
-  border-radius: 30%;
-  background: #f1c7648c;
 }
 .paw {
   position: absolute;
@@ -172,18 +98,18 @@ body {
     translate: 0 0;
   }
   50% {
-    translate: 0 -2px;
+    translate: 0 -4px;
   }
 }
 @keyframes paw-idle {
   0%,
   100% {
     translate: 0 0;
-    rotate: -0.25deg;
+    rotate: -0.5deg;
   }
   50% {
-    translate: 0.6px -1.4px;
-    rotate: 0.3deg;
+    translate: 1.2px -2.8px;
+    rotate: 0.6deg;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -197,11 +123,11 @@ body {
 }
 .stats {
   position: absolute;
-  left: 1080px;
-  top: 380px;
-  width: 265px;
-  padding: 12px 22px;
-  border-radius: 20px;
+  left: 814px;
+  top: 490px;
+  width: 210px;
+  padding: 8px 14px;
+  border-radius: 14px;
   background: #f5f6e9e8;
   box-shadow: 0 5px 22px #213c3014;
 }
@@ -209,16 +135,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 17px 0;
+  gap: 8px;
+  padding: 7px 0;
 }
 .metric > span {
-  font-size: 17px;
+  font-size: 14px;
   color: #7b8772;
   white-space: nowrap;
 }
 .metric strong {
-  font-size: 23px;
+  font-size: 18px;
   font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -243,16 +169,46 @@ body {
   border-bottom: 10px solid transparent;
 }
 .pet-speech {
-  left: 700px;
+  left: 620px;
   top: 330px;
   max-width: 320px;
   font-size: 17px;
   line-height: 1.7;
 }
 .rest-speech {
-  left: 700px;
+  left: 620px;
   top: 200px;
   max-width: 350px;
+}
+.rest-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  font-size: 16px;
+}
+.rest-footer > span {
+  white-space: nowrap;
+}
+.rest-dismiss {
+  display: block;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 16px;
+  background: #e1e6d6;
+  color: #45523d;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.rest-dismiss:hover {
+  background: #d2dcc4;
+}
+.rest-dismiss:focus-visible {
+  outline: 2px solid #77846e;
+  outline-offset: 2px;
 }
 aside {
   font-size: 11px;
@@ -272,14 +228,14 @@ aside {
 }
 
 .stats {
-  padding-top: 40px;
+  padding-top: 27px;
 }
 .gear {
   position: absolute;
-  right: 13px;
-  top: 9px;
-  width: 32px;
-  height: 32px;
+  right: 8px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border: 0;
@@ -287,7 +243,7 @@ aside {
   background: transparent;
   color: #77846e;
   font-family: "Segoe UI Symbol", sans-serif;
-  font-size: 25px;
+  font-size: 19px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -301,8 +257,8 @@ aside {
   position: absolute;
   z-index: 10;
   right: 12px;
-  top: 45px;
-  width: 176px;
+  top: 30px;
+  width: 200px;
   padding: 6px;
   border-radius: 13px;
   background: #fcfcf2;

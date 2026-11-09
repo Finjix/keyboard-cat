@@ -1,4 +1,5 @@
 import { Daily, Input } from "../shared/types";
+import { restLines } from "./rest-lines";
 export const IDLE = 300_000,
   HOUR = 3_600_000,
   BUBBLE = 1_800_000;
@@ -10,6 +11,7 @@ export class Engine {
   daily: Daily;
   continuousMs = 0;
   reminderUntil = 0;
+  reminderText = "";
   private last: number | null = null;
   private cursor: number;
   private wall: number;
@@ -45,7 +47,7 @@ export class Engine {
     if (this.last !== null) {
       this.continuousMs += Math.max(0, end - this.cursor);
       if (this.continuousMs >= this.next) {
-        this.reminderUntil = wall + BUBBLE;
+        this.remind(wall);
         this.next = (Math.floor(this.continuousMs / HOUR) + 1) * HOUR;
       }
       if (mono - this.last >= IDLE) {
@@ -64,6 +66,11 @@ export class Engine {
   private ensureDay(wall: number) {
     if (this.daily.date !== dateKey(wall))
       this.daily = { date: dateKey(wall), keys: 0, clicks: 0, workMs: 0 };
+  }
+  remind(wall: number) {
+    const choices = restLines.filter((line) => line !== this.reminderText);
+    this.reminderText = choices[Math.floor(Math.random() * choices.length)];
+    this.reminderUntil = wall + BUBBLE;
   }
   input(e: Input, mono: number, wall: number) {
     this.tick(mono, wall);

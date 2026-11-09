@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { Engine } from "./engine";
+import { petLines, PET_SPEECH_MS } from "./pet-lines";
 import { Desktop, sceneBounds } from "./desktop";
 import { defaults, Settings, Snapshot, Input } from "../shared/types";
 app.setName("懵薯");
@@ -25,7 +26,11 @@ app.setPath(
   "userData",
   join(
     app.getPath("appData"),
-    process.argv.includes("--smoke") ? "Mengshu-smoke" : "Mengshu",
+    process.argv.includes("--smoke")
+      ? "Mengshu-smoke"
+      : app.isPackaged
+        ? "Mengshu"
+        : "Mengshu-dev",
   ),
 );
 let win: BrowserWindow,
@@ -42,6 +47,7 @@ let settings = { ...defaults },
   ready = false;
 let storePath = "",
   logPath = "";
+let speechTimer: ReturnType<typeof setTimeout> | undefined;
 const log = (s: string) => {
   if (logPath) appendFileSync(logPath, `${new Date().toISOString()} ${s}\n`);
 };
@@ -49,6 +55,7 @@ const state = (): Snapshot => ({
   daily: engine.daily,
   continuousMs: engine.continuousMs,
   reminderUntil: engine.reminderUntil,
+  reminderText: engine.reminderText,
   speech,
   speechUntil,
   settings,
@@ -174,17 +181,17 @@ function update(p: Partial<Settings>) {
 }
 function interact(action: string) {
   if (action === "dismiss") engine.reminderUntil = 0;
+  else if (action === "debug-hour") engine.remind(Date.now());
   else if (action === "pet") {
-    const lines = [
-      "今天也有在好好努力呀。",
-      "喵，陪你把这一点点做完。",
-      "爪爪已就位，请开始你的表演。",
-      "摸到一只正在认真上班的小猫。",
-      "键盘归你，小鱼干归我。",
-      "累了就停一会儿，我在这里。",
-    ];
-    speech = lines[Math.floor(Math.random() * lines.length)];
-    speechUntil = Date.now() + 6000;
+    speech = petLines[Math.floor(Math.random() * petLines.length)];
+    speechUntil = Date.now() + PET_SPEECH_MS;
+    clearTimeout(speechTimer);
+    speechTimer = setTimeout(() => {
+      speech = "";
+      speechUntil = 0;
+      speechTimer = undefined;
+      publish();
+    }, PET_SPEECH_MS);
   }
   publish();
 }
@@ -286,7 +293,6 @@ else {
       });
     setInterval(() => {
       engine.tick(performance.now(), Date.now());
-      if (Date.now() >= speechUntil) speech = "";
       publish();
     }, 1000);
     setInterval(save, 5000);
@@ -310,6 +316,7 @@ else {
   app.on("window-all-closed", () => {});
   app.on("before-quit", () => {
     quitting = true;
+    clearTimeout(speechTimer);
     worker?.kill();
     if (engine) {
       engine.stop(performance.now(), Date.now());

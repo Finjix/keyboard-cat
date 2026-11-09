@@ -4,7 +4,6 @@ import { defaults, Snapshot, Input } from "../shared/types";
 import { keys } from "../shared/keyboard";
 import { keySurface } from "../shared/keyboard-art";
 import keyboardArt from "./assets/keyboard.png";
-import mouseArt from "./assets/mouse.png";
 import cat from "./assets/cat.png";
 import leftPaw from "./assets/paw-left.png";
 import rightPaw from "./assets/paw-right.png";
@@ -13,6 +12,7 @@ const initial: Snapshot = {
   daily: { date: "", keys: 0, clicks: 0, workMs: 0 },
   continuousMs: 0,
   reminderUntil: 0,
+  reminderText: "",
   speech: "",
   speechUntil: 0,
   settings: defaults,
@@ -20,12 +20,11 @@ const initial: Snapshot = {
   inputError: "",
 };
 const duration = (ms: number) =>
-  `${String(Math.floor(ms / 3600000)).padStart(2, "0")} : ${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}`;
+  `${Math.floor(ms / 3600000)} 时 ${Math.floor(ms / 60000) % 60} 分`;
 function App() {
   const scene = useRef<HTMLDivElement>(null);
   const [s, set] = useState(initial),
     [pressed, setPressed] = useState<number[]>([]),
-    [buttons, setButtons] = useState<number[]>([]),
     [menuOpen, setMenuOpen] = useState(false),
     [size, setSize] = useState({ w: innerWidth, h: innerHeight });
   function performAction(action: string) {
@@ -45,7 +44,8 @@ function App() {
       window.mengshu.quit();
       return;
     }
-    window.mengshu.interact(action as "pet" | "dismiss");
+    if (action === "debug-hour") setMenuOpen(false);
+    window.mengshu.interact(action as "pet" | "dismiss" | "debug-hour");
   }
   useEffect(() => {
     window.mengshu.snapshot().then(set);
@@ -99,14 +99,9 @@ function App() {
         held.delete(e.keycode!);
         setPressed((a) => a.filter((x) => x !== e.keycode));
       }
-      if (e.type === "mousedown")
-        setButtons((a) => [...new Set([...a, e.button!])]);
-      if (e.type === "mouseup")
-        setButtons((a) => a.filter((x) => x !== e.button));
     });
     const reset = () => {
       setPressed([]);
-      setButtons([]);
       held.clear();
       strokes = [];
       pace = 1;
@@ -170,7 +165,6 @@ function App() {
         .find((k) => k && (left ? k.x < 7.5 : k.x >= 7.5));
   const l = latest(true),
     r = latest(false);
-  const onMouse = buttons.length > 0;
   // Side flags refer to the screen. The front-facing cat's right paw is on
   // screen-left (R), and its left paw is on screen-right (main keyboard +/=).
   const restR = keys.find((key) => key.code === 19)!;
@@ -178,15 +172,8 @@ function App() {
   const pawStyle = (k: typeof l, right = false) => {
     const rest = keySurface(right ? restPlus : restR);
     const target = keySurface(k ?? (right ? restPlus : restR));
-    const x =
-      right && onMouse
-        ? buttons.includes(2)
-          ? 1150
-          : buttons.includes(3)
-            ? 1128
-            : 1105
-        : 94 + target.x + target.w / 2;
-    const y = right && onMouse ? 790 : 630 + target.y + target.h / 2;
+    const x = 94 + target.x + target.w / 2;
+    const y = 630 + target.y + target.h / 2;
     // Lean gently into the reach, with the paw tip remaining at the key.
     const reach = Math.max(
       -7,
@@ -199,7 +186,7 @@ function App() {
     return {
       left: x,
       top: y,
-      transform: `translate(-50%,-97%) rotate(${((right ? -5 : 5) + reach).toFixed(2)}deg) scale(${k || (right && onMouse) ? 0.96 : 1})`,
+      transform: `translate(-50%,-97%) rotate(${((right ? -5 : 5) + reach).toFixed(2)}deg) scale(${k ? 0.96 : 1})`,
     };
   };
   return (
@@ -231,29 +218,6 @@ function App() {
           />
         ))}
       </div>
-      <div className="mouse">
-        <img
-          className="mouse-art"
-          src={mouseArt}
-          alt="卡通鼠标"
-          draggable={false}
-        />
-        <span
-          className={
-            "mouse-feedback mouse-left" + (buttons.includes(1) ? " down" : "")
-          }
-        />
-        <span
-          className={
-            "mouse-feedback mouse-right" + (buttons.includes(2) ? " down" : "")
-          }
-        />
-        <span
-          className={
-            "mouse-feedback mouse-middle" + (buttons.includes(3) ? " down" : "")
-          }
-        />
-      </div>
       <img
         className={"paw" + (l ? " is-active" : "")}
         src={leftPaw}
@@ -262,7 +226,7 @@ function App() {
         draggable={false}
       />
       <img
-        className={"paw right" + (r || onMouse ? " is-active" : "")}
+        className={"paw right" + (r ? " is-active" : "")}
         src={rightPaw}
         alt="猫的左爪"
         style={pawStyle(r, true)}
@@ -291,6 +255,13 @@ function App() {
             </button>
             <button
               role="menuitem"
+              data-action="debug-hour"
+              onClick={() => performAction("debug-hour")}
+            >
+              调试：连续工作 1h
+            </button>
+            <button
+              role="menuitem"
               data-action="quit"
               onClick={() => performAction("quit")}
             >
@@ -300,20 +271,12 @@ function App() {
         )}
 
         <div className="metric">
-          <span>键盘</span>
+          <span>敲薯</span>
           <strong>{s.daily.keys.toLocaleString()} 次</strong>
-        </div>
-        <div className="metric">
-          <span>鼠标</span>
-          <strong>{s.daily.clicks.toLocaleString()} 次</strong>
         </div>
         <div className="metric">
           <span>今日工作</span>
           <strong>{duration(s.daily.workMs)}</strong>
-        </div>
-        <div className="metric">
-          <span>{s.settings.paused ? "已暂停" : "连续工作"}</span>
-          <strong>{duration(s.continuousMs)}</strong>
         </div>
         {(s.desktopError || s.inputError) && (
           <aside>{s.desktopError || s.inputError}</aside>
@@ -321,12 +284,18 @@ function App() {
       </section>
       {s.speech && <div className="speech pet-speech">{s.speech}</div>}
       {s.reminderUntil > 0 && (
-        <div
-          className="speech rest-speech"
-          data-action="dismiss"
-          title="单击关闭"
-        >
-          休息一下吧，喝口水～
+        <div className="speech rest-speech" role="status">
+          <div className="rest-message">{s.reminderText}</div>
+          <div className="rest-footer">
+            <span>休息一下吧~</span>
+            <button
+              className="rest-dismiss"
+              data-action="dismiss"
+              onClick={() => performAction("dismiss")}
+            >
+              我知道了
+            </button>
+          </div>
         </div>
       )}
     </div>

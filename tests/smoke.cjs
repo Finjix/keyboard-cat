@@ -49,14 +49,20 @@ const path = require("node:path");
       paws[0].src === paws[1].src
     )
       throw Error("Two distinct photo paw cutouts must be loaded");
-    if (
-      !(await page
-        .locator("img.mouse-art")
-        .evaluate((img) => img.complete && img.naturalWidth > 0))
-    )
-      throw Error("Generated mouse asset missing");
+    if (await page.locator(".mouse, .mouse-art, .mouse-feedback").count())
+      throw Error("Mouse visuals must be removed");
     if ((await page.locator(".key").allTextContents()).some((s) => s.trim()))
       throw Error("Keyboard must use image legends");
+    const metricLabels = await page.locator(".metric > span").allTextContents();
+    if (metricLabels.join(",") !== "敲薯,今日工作")
+      throw Error("Statistics must only show 敲薯 and today's work");
+    const workTime = await page
+      .locator(".metric")
+      .nth(1)
+      .locator("strong")
+      .textContent();
+    if (!/^\d+ 时 \d+ 分$/.test(workTime))
+      throw Error("Today's work must use hours and minutes");
     const send = async (type) =>
       app.evaluate(
         ({ BrowserWindow }, e) =>
@@ -174,23 +180,14 @@ const path = require("node:path");
     await page.waitForTimeout(300);
     if ((await page.locator(".paw.right").getAttribute("style")) !== beforeMove)
       throw Error("Movement moved paw");
-    for (const [button, side] of [
-      [1, "left"],
-      [2, "right"],
-      [3, "middle"],
-    ]) {
+    for (const button of [1, 2, 3]) {
       await send({ type: "mousedown", button });
-      await page.waitForTimeout(130);
-      if (!(await page.locator(`.mouse-${side}.down`).count()))
-        throw Error(`Mouse ${side} feedback missing`);
+      await page.waitForTimeout(300);
       if (
-        (await page.locator(".paw.right").getAttribute("style")) === beforeMove
+        (await page.locator(".paw.right").getAttribute("style")) !== beforeMove
       )
-        throw Error("Mouse click did not move paw");
+        throw Error("Mouse holds must not move paw");
       await send({ type: "mouseup", button });
-      await page.waitForTimeout(130);
-      if (await page.locator(".mouse-feedback.down").count())
-        throw Error("Mouse feedback stuck after release");
     }
     await page.evaluate(() => window.mengshu.update({ paused: false }));
     await page.waitForTimeout(180);
@@ -231,20 +228,71 @@ const path = require("node:path");
     await click(".cat", 0.3, 0.4);
     if (!(await page.locator(".pet-speech").count()))
       throw Error("Pet dialogue missing");
+    const speechState = await page.evaluate(() => window.mengshu.snapshot());
+    const remaining = speechState.speechUntil - Date.now();
+    if (remaining < 2500 || remaining > 3000)
+      throw Error("Pet dialogue must expire in 3 seconds");
+    await page.waitForTimeout(1700);
+    await click(".cat", 0.3, 0.4);
+    await page.waitForTimeout(1700);
+    if (!(await page.locator(".pet-speech").count()))
+      throw Error("Clicking again must restart the 3-second speech timer");
+    await page.waitForFunction(
+      () => !document.querySelector(".pet-speech"),
+      null,
+      { timeout: 1700 },
+    );
     await click(".gear");
     if (!(await page.locator("[role=menu]").count()))
       throw Error("Gear menu did not open");
     const labels = await page.locator("[role=menu] button").allTextContents();
     if (
-      labels.length !== 2 ||
+      labels.length !== 3 ||
       !labels[0].includes("开机自启") ||
-      labels[1] !== "退出"
+      labels[1] !== "调试：连续工作 1h" ||
+      labels[2] !== "退出"
     )
-      throw Error("Settings must only contain autostart and quit");
+      throw Error("Settings must contain autostart, debug hour and quit");
     await page.screenshot({
       path: "docs/settings-preview.png",
       omitBackground: true,
     });
+    const beforeDebug = await page.evaluate(() => window.mengshu.snapshot());
+    await click("[data-action=debug-hour]");
+    await page.waitForSelector(".rest-speech");
+    const afterDebug = await page.evaluate(() => window.mengshu.snapshot());
+    if (
+      !afterDebug.reminderText ||
+      (await page.locator(".rest-message").textContent()) !==
+        afterDebug.reminderText ||
+      (await page.locator(".rest-dismiss").textContent()) !== "我知道了"
+    )
+      throw Error(
+        "Rest reminder must show selected text and acknowledgement button",
+      );
+    const reminderRemaining = afterDebug.reminderUntil - Date.now();
+    if (reminderRemaining < 1799000 || reminderRemaining > 1800000)
+      throw Error(
+        "Debug hour must trigger the regular 30-minute rest reminder",
+      );
+    if (
+      afterDebug.daily.workMs - beforeDebug.daily.workMs > 5000 ||
+      afterDebug.continuousMs - beforeDebug.continuousMs > 5000
+    )
+      throw Error("Debug hour must not inflate recorded work time");
+    if (await page.locator("[role=menu]").count())
+      throw Error("Debug action must close the settings menu");
+    await page.screenshot({
+      path: "docs/rest-reminder-preview.png",
+      omitBackground: true,
+    });
+    await click(".rest-message");
+    if (!(await page.locator(".rest-speech").count()))
+      throw Error("Reminder text must remain visible until acknowledged");
+    await click(".rest-dismiss");
+    if (await page.locator(".rest-speech").count())
+      throw Error("Acknowledgement button must close the rest reminder");
+    await click(".gear");
     const original = (await page.evaluate(() => window.mengshu.snapshot()))
       .settings.autoStart;
     await click("[data-action=autostart]");
@@ -295,7 +343,7 @@ const path = require("node:path");
     );
     await exit;
     console.log(
-      "smoke passed: idle motion, key-dependent rotation, reduced motion, native input, gear routing, exactly two settings, persisted toggle, recovery, quit",
+      "smoke passed: idle motion, key-dependent rotation, reduced motion, native input, gear routing, debug rest reminder, persisted toggle, recovery, quit",
     );
   } finally {
     if (!closed) await app.close();
