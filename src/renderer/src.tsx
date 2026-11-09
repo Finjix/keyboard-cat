@@ -172,9 +172,9 @@ function App() {
     r = latest(false);
   const onMouse = buttons.length > 0;
   // Side flags refer to the screen. The front-facing cat's right paw is on
-  // screen-left (R), and its left paw is on screen-right (numpad +).
+  // screen-left (R), and its left paw is on screen-right (main keyboard +/=).
   const restR = keys.find((key) => key.code === 19)!;
-  const restPlus = keys.find((key) => key.code === 78)!;
+  const restPlus = keys.find((key) => key.code === 13)!;
   const pawStyle = (k: typeof l, right = false) => {
     const rest = keySurface(right ? restPlus : restR);
     const target = keySurface(k ?? (right ? restPlus : restR));
