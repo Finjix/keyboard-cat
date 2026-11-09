@@ -18,7 +18,7 @@ const path = require("node:path");
   try {
     const page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
+    await page.waitForSelector(".pet-speech");
     if ((await app.windows()).length !== 1)
       throw Error("Unexpected settings/taskbar window");
     const state = await page.evaluate(() => window.mengshu.snapshot());
@@ -32,8 +32,8 @@ const path = require("node:path");
     )
       throw Error("Startup must show the exact welcome message");
     const greetingRemaining = state.speechUntil - Date.now();
-    if (greetingRemaining < 5000 || greetingRemaining > 10000)
-      throw Error("Startup welcome must use a ten-second timer");
+    if (greetingRemaining < 1500 || greetingRemaining > 3000)
+      throw Error("Startup welcome must use a three-second timer");
     await page.evaluate(() => {
       window.mengshu.interact("pet");
       window.mengshu.interact("pet");
@@ -47,7 +47,7 @@ const path = require("node:path");
       greetingAfterClicks.speechUntil !== state.speechUntil
     )
       throw Error(
-        "Cat clicks must not replace or extend the ten-second welcome",
+        "Cat clicks must not replace or extend the three-second welcome",
       );
     await page.screenshot({
       path: "docs/startup-preview.png",

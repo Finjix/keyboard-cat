@@ -371,4 +371,3 @@ Ctrl 加摸摸，复制一份快乐。
 
 export const PET_SPEECH_MS = 3000;
 export const STARTUP_SPEECH = "人好喵~我素懵薯！我树薯薯养的键盘喵喵。";
-export const STARTUP_SPEECH_MS = 10000;

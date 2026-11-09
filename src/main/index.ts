@@ -23,7 +23,6 @@ import {
   petLines,
   PET_SPEECH_MS,
   STARTUP_SPEECH,
-  STARTUP_SPEECH_MS,
 } from "./pet-lines";
 import { fastTypingLines } from "./typing-burst";
 import { Desktop, sceneBounds } from "./desktop";
@@ -145,7 +144,7 @@ function createScene() {
   });
   win.setIgnoreMouseEvents(true);
   win.webContents.on("did-finish-load", () => {
-    if (!ready) say(STARTUP_SPEECH, STARTUP_SPEECH_MS);
+    if (!ready) say(STARTUP_SPEECH);
     ready = true;
     attach();
   });
