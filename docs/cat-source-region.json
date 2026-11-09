@@ -1,0 +1,23 @@
+{
+  "source": "reference.jpg",
+  "source_sha256": "269639ed1f42b5d2c46f3186a2f0e2bb8f48492b5b8bbff39bf0db9f8f49e0e5",
+  "crop": [
+    406,
+    148,
+    1622,
+    1279
+  ],
+  "rgb_identical_to_source_region": false,
+  "alpha": "original head fur alpha plus generated fine fur brush stamps under original opaque subject",
+  "contour": "scripts/cat-outline.json",
+  "anchor_count": 118,
+  "head_fur_roi": [
+    390,
+    120,
+    1200,
+    540
+  ],
+  "face_rgb_identical_to_source": true,
+  "fur_brush": "src/renderer/assets/fur-fringe.png",
+  "fur_stamps": 113
+}

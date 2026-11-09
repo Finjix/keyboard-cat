@@ -1,0 +1,75 @@
+{
+  "name": "mengshu",
+  "version": "1.0.10",
+  "description": "懵薯 · 和你一起认真生活的猫",
+  "main": "out/main/index.js",
+  "author": "Mengshu",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "predist": "node scripts/prepare-release.cjs --clean",
+    "dist": "npm run build && electron-builder --win zip --x64",
+    "test:smoke": "node tests/smoke.cjs",
+    "postdist": "node scripts/copy-release.cjs"
+  },
+  "dependencies": {
+    "koffi": "3.3.7",
+    "uiohook-napi": "1.5.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "44.9.1",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "prettier": "^3.9.10",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^5.1.0"
+  },
+  "build": {
+    "appId": "cn.mengshu.desktop",
+    "productName": "懵薯",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**/*",
+      "node_modules/uiohook-napi/**/*"
+    ],
+    "win": {
+      "target": "zip",
+      "icon": "build/icon.ico",
+      "signExecutable": false
+    },
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "extraResources": [
+      {
+        "to": "icon.ico",
+        "from": "build/icon.ico"
+      }
+    ],
+    "artifactName": "懵薯-${version}-Windows-x64.${ext}",
+    "extraFiles": [
+      {
+        "from": "build/portable-readme.txt",
+        "to": "使用说明.txt"
+      }
+    ]
+  },
+  "overrides": {
+    "minimatch": "^11.0.2"
+  }
+}
