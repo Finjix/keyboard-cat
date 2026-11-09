@@ -10,6 +10,8 @@ import leftPaw from "./assets/paw-left.png";
 import rightPaw from "./assets/paw-right.png";
 import "./style.css";
 import { createMeowPlayer } from "./meow";
+import { createKeyPopLayer } from "./key-pops";
+import "./key-pops.css";
 const initial: Snapshot = {
   daily: { date: "", keys: 0, clicks: 0, workMs: 0 },
   continuousMs: 0,
@@ -130,6 +132,8 @@ function App() {
         )
           return;
       }
+      if (el?.dataset.action === "pet")
+        window.dispatchEvent(new CustomEvent("key-pops-pet", { detail: p }));
       if (el) performAction(el.dataset.action!);
     };
     window.addEventListener("desktop-click", click);
@@ -144,6 +148,26 @@ function App() {
       window.removeEventListener("desktop-click", click);
       window.removeEventListener("reset-input", reset);
       window.removeEventListener("resize", resize);
+    };
+  }, []);
+  const popLayer = useRef<HTMLDivElement>(null);
+  // 键帽飘字固定开启，没有开关。
+  useEffect(() => {
+    if (!popLayer.current || !scene.current) return;
+    const layer = createKeyPopLayer(popLayer.current, scene.current);
+    const offInput = window.mengshu.input(layer.input);
+    const pet = (e: Event) => {
+      const p = (e as CustomEvent<{ x: number; y: number }>).detail;
+      layer.pet(p.x, p.y);
+    };
+    const reset = () => layer.reset();
+    window.addEventListener("key-pops-pet", pet);
+    window.addEventListener("reset-input", reset);
+    return () => {
+      offInput();
+      window.removeEventListener("key-pops-pet", pet);
+      window.removeEventListener("reset-input", reset);
+      layer.destroy();
     };
   }, []);
   const scale = Math.min(size.w / 1440, size.h / 960),
@@ -264,6 +288,7 @@ function App() {
       ) : s.speech ? (
         <div className="speech pet-speech">{s.speech}</div>
       ) : null}
+      <div ref={popLayer} className="pop-layer" aria-hidden="true" />
     </div>
   );
 }

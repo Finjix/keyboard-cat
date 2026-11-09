@@ -129,8 +129,11 @@ const path = require("node:path");
     }));
     if (
       bounds.actual.x < bounds.primary.x ||
-      Math.abs(bounds.actual.x + bounds.actual.width / 2 -
-        (bounds.primary.x + bounds.primary.width / 2)) > 1
+      Math.abs(
+        bounds.actual.x +
+          bounds.actual.width / 2 -
+          (bounds.primary.x + bounds.primary.width / 2),
+      ) > 1
     )
       throw Error("Primary display placement failed");
     if (!(await page.locator("img.keyboard-art").count()))
@@ -353,6 +356,15 @@ const path = require("node:path");
       await page.waitForTimeout(150);
       if (!(await page.locator(".key.pressed").count()))
         throw Error("Native key animation missing");
+      const pressedLook = await page
+        .locator(".key.pressed")
+        .first()
+        .evaluate((el) => {
+          const style = getComputedStyle(el);
+          return style.backgroundColor + "|" + style.boxShadow;
+        });
+      if (pressedLook !== "rgba(0, 0, 0, 0)|none")
+        throw Error("Pressed keys must not get a colour block: " + pressedLook);
       await page.screenshot({
         path: "docs/keypress-preview.png",
         omitBackground: true,
@@ -455,7 +467,7 @@ const path = require("node:path");
     if (
       !trayState.alive ||
       trayState.bounds.width <= 0 ||
-      trayState.labels.join(",") !== "开机自启,调试：连续工作 1h,退出"
+      trayState.labels.join(",") !== "开机自启,退出"
     )
       throw Error("Native tray icon and settings menu must be available");
     const trayClick = (id) =>
@@ -467,7 +479,7 @@ const path = require("node:path");
     await page.waitForSelector(".pet-speech");
     const beforeDebug = await page.evaluate(() => window.mengshu.snapshot());
     const meowsBeforeReminder = await page.evaluate(() => window.__meowCount);
-    await trayClick("debug-hour");
+    await page.evaluate(() => window.mengshu.interact("debug-hour"));
     await page.waitForSelector(".rest-speech");
     const afterDebug = await page.evaluate(() => window.mengshu.snapshot());
     if (
@@ -552,6 +564,70 @@ const path = require("node:path");
       )
         throw Error("Tray checkbox must track the current autostart setting");
     }
+    // 打字时键盘印字不能闪：远离按键的数字小键盘区域，空闲与按键时像素一致。
+    await page.waitForTimeout(1200);
+    const numpad = await page.evaluate(() => {
+      const r = (c) =>
+        document.querySelector(`[data-key="${c}"]`).getBoundingClientRect();
+      const a = r(69),
+        b = r(83);
+      return {
+        x: Math.round(a.left),
+        y: Math.round(a.top),
+        width: Math.round(b.right - a.left),
+        height: Math.round(b.bottom - a.top),
+      };
+    });
+    const legendDiff = (first) =>
+      app.evaluate(
+        async ({ BrowserWindow }, { rect, first }) => {
+          const image =
+            await BrowserWindow.getAllWindows()[0].webContents.capturePage(
+              rect,
+            );
+          const bitmap = image.toBitmap();
+          if (first) {
+            globalThis.__legendIdle = bitmap;
+            return 0;
+          }
+          const idle = globalThis.__legendIdle;
+          let changed = 0;
+          for (let i = 0; i < bitmap.length; i++)
+            if (Math.abs(bitmap[i] - idle[i]) > 24) changed++;
+          return changed;
+        },
+        { rect: numpad, first },
+      );
+    await legendDiff(true);
+    let worstLegendDiff = 0;
+    for (const keycode of [30, 31, 32, 33, 16, 17]) {
+      await send({ type: "keydown", keycode });
+      await page.waitForTimeout(40);
+      worstLegendDiff = Math.max(worstLegendDiff, await legendDiff(false));
+      await send({ type: "keyup", keycode });
+      await page.waitForTimeout(40);
+    }
+    if (worstLegendDiff > 0)
+      throw Error(
+        `Keyboard legends must not shimmer while typing (${worstLegendDiff} channels changed)`,
+      );
+    // 键帽飘字：固定开启，只出文字不出声，不显示真实按键，暗号回应。
+    const meowsBeforePops = await page.evaluate(() => window.__meowCount);
+    for (const keycode of [30, 31, 32, 50, 24, 21, 22]) {
+      await send({ type: "keydown", keycode });
+      await send({ type: "keyup", keycode });
+      await page.waitForTimeout(50);
+    }
+    await page.waitForSelector(".key-pop.word");
+    const pops = await page.locator(".key-pop").allTextContents();
+    if (pops.some((text) => /^[ASDMOYU]$/i.test(text.trim())))
+      throw Error("Key pops must never reveal the real typed key");
+    await page.screenshot({
+      path: "docs/key-pops-preview.png",
+      omitBackground: true,
+    });
+    if ((await page.evaluate(() => window.__meowCount)) !== meowsBeforePops)
+      throw Error("Key pops must not add any sound");
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].destroy(),
     );
@@ -570,7 +646,7 @@ const path = require("node:path");
     await trayClick("quit");
     await exit;
     console.log(
-      "smoke passed: idle motion, key-dependent rotation, reduced motion, native input, native tray routing, debug rest reminder, persisted toggle, recovery, quit",
+      "smoke passed: steady key legends, key pops, idle motion, key-dependent rotation, reduced motion, native input, native tray routing, debug rest reminder, persisted toggle, recovery, quit",
     );
   } finally {
     if (!closed) await app.close();

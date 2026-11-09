@@ -66,11 +66,6 @@ function refreshTrayMenu() {
         checked: settings.autoStart,
         click: () => update({ autoStart: !settings.autoStart }),
       },
-      {
-        id: "debug-hour",
-        label: "调试：连续工作 1h",
-        click: () => interact("debug-hour"),
-      },
       { id: "quit", label: "退出", click: () => app.quit() },
     ]),
   );
@@ -246,7 +241,9 @@ function interact(action: string) {
     if (acknowledged && settings.visible && !win.isDestroyed())
       win.webContents.send("meow");
     return;
-  } else if (action === "debug-hour") engine.remind(Date.now());
+  } else if (action === "debug-hour" && process.argv.includes("--smoke"))
+    // Test-only shortcut for the hourly reminder; no longer in the tray.
+    engine.remind(Date.now());
   else if (action === "pet") {
     // The sound belongs to a newly accepted bubble, not to every mouse click.
     if (speechUntil > Date.now() || engine.reminderUntil > Date.now()) return;

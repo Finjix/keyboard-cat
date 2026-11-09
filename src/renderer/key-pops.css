@@ -1,0 +1,130 @@
+/* 键帽飘字：只在键盘附近出现，不遮挡、不抖屏、不接收点击。 */
+.pop-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.key-pop {
+  position: absolute;
+  translate: -50% -50%;
+  white-space: nowrap;
+  line-height: 1;
+  pointer-events: none;
+  font-family:
+    "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Emoji", sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--color);
+  -webkit-text-stroke: 1px #2d2a24;
+  text-shadow: 0 2px 0 #2d2a24;
+  animation: var(--motion) var(--life) cubic-bezier(0.2, 0.9, 0.4, 1) both;
+}
+.key-pop.rise {
+  --motion: pop-rise;
+}
+.key-pop.hop {
+  --motion: pop-hop;
+}
+.key-pop.wobble {
+  --motion: pop-wobble;
+}
+.key-pop.special {
+  font-size: 22px;
+  color: #ee7d3f;
+}
+.key-pop.shortcut,
+.key-pop.word,
+.key-pop.milestone {
+  padding: 5px 11px;
+  border-radius: 12px;
+  border: 2px solid #2d2a24;
+  box-shadow: 0 3px 0 #2d2a24;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+.key-pop.shortcut {
+  font-size: 18px;
+  color: #2f5d3a;
+  background: #dbe9c8;
+}
+.key-pop.word {
+  font-size: 22px;
+  color: #6a3b12;
+  background: #ffe39a;
+}
+.key-pop.milestone {
+  font-size: 22px;
+  color: #fff;
+  background: #e8885a;
+}
+.key-pop.heart {
+  font-size: 22px;
+  color: #ef6f8f;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 1px 2px #0003;
+}
+@keyframes pop-rise {
+  0% {
+    transform: translate(0, 0) scale(0.3);
+    opacity: 0;
+  }
+  18% {
+    transform: translate(calc(var(--dx) * 0.3), -30px) scale(1.18)
+      rotate(var(--spin));
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), -92px) scale(0.92) rotate(var(--spin));
+    opacity: 0;
+  }
+}
+@keyframes pop-hop {
+  0% {
+    transform: translate(0, 0) scale(0.3);
+    opacity: 0;
+  }
+  25% {
+    transform: translate(calc(var(--dx) * 0.5), -64px) scale(1.12)
+      rotate(var(--spin));
+    opacity: 1;
+  }
+  55% {
+    transform: translate(calc(var(--dx) * 0.8), -40px) scale(1)
+      rotate(var(--spin));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), -70px) scale(0.9);
+    opacity: 0;
+  }
+}
+@keyframes pop-wobble {
+  0% {
+    transform: translate(0, 0) scale(0.3);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(0, -34px) scale(1.15) rotate(-10deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(calc(var(--dx) * 0.4), -50px) rotate(9deg);
+  }
+  60% {
+    transform: translate(calc(var(--dx) * 0.7), -66px) rotate(-6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), -90px) rotate(0deg) scale(0.9);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop-layer {
+    display: none;
+  }
+}
