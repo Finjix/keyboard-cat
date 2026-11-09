@@ -5,6 +5,7 @@ import { keySurface } from "../shared/keyboard-art";
 import { projectKeyboardPoint } from "../shared/keyboard-view";
 import { KeyPops } from "../shared/key-pops";
 import type { Input } from "../shared/types";
+import { HeldKeys } from "../shared/held-keys";
 
 const MAX_POPS = 60;
 const PLAIN_GAP_MS = 35;
@@ -32,7 +33,7 @@ const pick = <T>(list: readonly T[]) =>
 
 export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
   const pops = new KeyPops();
-  const held = new Set<number>();
+  const held = new HeldKeys();
   let lastPlain = 0;
 
   const centre = (code: number) => {
@@ -69,13 +70,20 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
     input(e: Input) {
       if (e.keycode === undefined) return;
       if (e.type === "keyup") {
-        held.delete(e.keycode);
+        held.up(e.keycode);
         return;
       }
-      if (e.type !== "keydown" || held.has(e.keycode)) return;
-      const pop = pops.press(e.keycode, held);
-      held.add(e.keycode);
+      if (e.type !== "keydown") return;
       const now = performance.now();
+      // Drop modifiers whose key-up was swallowed (Ctrl+Alt+Del, UAC), so a
+      // stale Ctrl does not turn every later "C" into a copy shortcut.
+      held.sweep(now);
+      if (held.has(e.keycode)) {
+        held.down(e.keycode, now);
+        return;
+      }
+      const pop = pops.press(e.keycode, held);
+      held.down(e.keycode, now);
       if (pop.kind === "plain") {
         if (now - lastPlain < PLAIN_GAP_MS) return;
         lastPlain = now;

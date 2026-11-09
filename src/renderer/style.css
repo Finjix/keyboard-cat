@@ -147,6 +147,8 @@ body {
 }
 .speech {
   position: absolute;
+  /* Above .pop-layer (z-index 5): hearts and key pops must not cover text. */
+  z-index: 6;
   background: #fffdf0f5;
   border-radius: 20px;
   padding: 18px 23px;

@@ -12,7 +12,10 @@ const aliases: Record<number, number> = {
   61011: 83,
 };
 const parent = process.parentPort!;
-let moveAt = 0;
+// Movement and wheel only mark activity (idle threshold is five minutes), so a
+// few messages per second are plenty; precision touchpads emit hundreds.
+const ACTIVITY_MS = 200;
+const lastActivity = { mousemove: 0, wheel: 0 };
 for (const type of [
   "keydown",
   "keyup",
@@ -22,10 +25,10 @@ for (const type of [
   "wheel",
 ] as const) {
   uIOhook.on(type as any, (e: any) => {
-    if (type === "mousemove") {
+    if (type === "mousemove" || type === "wheel") {
       const now = Date.now();
-      if (now - moveAt < 16) return;
-      moveAt = now;
+      if (now - lastActivity[type] < ACTIVITY_MS) return;
+      lastActivity[type] = now;
     }
     parent.postMessage({
       type,

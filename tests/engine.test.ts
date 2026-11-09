@@ -3,6 +3,7 @@ import { Engine, IDLE, HOUR, BUBBLE } from "../src/main/engine";
 import { keys } from "../src/shared/keyboard";
 import { keySurface } from "../src/shared/keyboard-art";
 import { restLines } from "../src/main/rest-lines";
+import { HeldKeys, STALE_KEY_MS } from "../src/shared/held-keys";
 const base = new Date(2026, 10, 9, 12).getTime();
 describe("work engine", () => {
   it("maps all 104 keys onto the generated keyboard image", () => {
@@ -98,6 +99,35 @@ describe("work engine", () => {
     e.tick(10000, base + 10000);
     expect(e.daily.workMs).toBe(1000);
   });
+  it("ignores corrupted saved counts", () => {
+    const e = new Engine(0, base, {
+      date: "2026-11-09",
+      keys: "x" as unknown as number,
+      clicks: -3,
+      workMs: NaN,
+    });
+    expect(e.daily).toEqual({
+      date: "2026-11-09",
+      keys: 0,
+      clicks: 0,
+      workMs: 0,
+    });
+  });
+  it("counts a key again when its key-up was swallowed", () => {
+    const e = new Engine(0, base);
+    // Ctrl+Alt+Del: the secure desktop eats the key-up of Delete.
+    e.input({ type: "keydown", keycode: 3667 }, 1000, base + 1000);
+    e.input({ type: "keydown", keycode: 3667 }, 1000 + STALE_KEY_MS, base);
+    expect(e.daily.keys).toBe(2);
+    // Genuine auto-repeat while held still counts once.
+    for (let t = 1; t <= 20; t++)
+      e.input(
+        { type: "keydown", keycode: 3667 },
+        1000 + STALE_KEY_MS + t * 33,
+        base,
+      );
+    expect(e.daily.keys).toBe(2);
+  });
   it("uses monotonic durations across wall clock jumps", () => {
     const e = new Engine(0, base);
     e.input({ type: "mousemove" }, 0, base);
@@ -108,5 +138,19 @@ describe("work engine", () => {
   it("has exactly 104 distinct physical keys", () => {
     expect(keys).toHaveLength(104);
     expect(new Set(keys.map((k) => k.code)).size).toBe(104);
+  });
+});
+describe("held keys", () => {
+  it("separates fresh presses from auto-repeat and sweeps lost key-ups", () => {
+    const h = new HeldKeys();
+    expect(h.down(29, 0)).toBe(true);
+    expect(h.down(29, 500)).toBe(false);
+    expect(h.down(30, 1000)).toBe(true);
+    expect(h.sweep(500 + STALE_KEY_MS - 1)).toBe(false);
+    expect(h.sweep(500 + STALE_KEY_MS)).toBe(true);
+    expect(h.has(29)).toBe(false);
+    expect(h.has(30)).toBe(true);
+    expect(h.up(30)).toBe(true);
+    expect(h.size).toBe(0);
   });
 });

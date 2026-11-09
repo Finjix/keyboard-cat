@@ -1,6 +1,7 @@
 import { Daily, Input } from "../shared/types";
 import { restLines } from "./rest-lines";
 import { TypingBurst } from "./typing-burst";
+import { HeldKeys } from "../shared/held-keys";
 export const IDLE = 300_000,
   HOUR = 3_600_000,
   BUBBLE = 1_800_000;
@@ -17,15 +18,23 @@ export class Engine {
   private cursor: number;
   private wall: number;
   private next = HOUR;
-  private down = new Set<number>();
+  private down = new HeldKeys();
   private buttons = new Set<number>();
   private typingBurst = new TypingBurst();
   constructor(mono: number, wall: number, saved?: Daily) {
     this.cursor = mono;
     this.wall = wall;
+    const count = (n: unknown) =>
+      typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : 0;
+    // A hand-edited or truncated state.json must not leak NaN into the panel.
     this.daily =
       saved?.date === dateKey(wall)
-        ? { ...saved }
+        ? {
+            date: saved.date,
+            keys: count(saved.keys),
+            clicks: count(saved.clicks),
+            workMs: count(saved.workMs),
+          }
         : { date: dateKey(wall), keys: 0, clicks: 0, workMs: 0 };
   }
   tick(mono: number, wall: number) {
@@ -80,13 +89,12 @@ export class Engine {
     this.last = mono;
     let burst = false;
     if (e.type === "keydown" && e.keycode !== undefined) {
-      if (!this.down.has(e.keycode)) {
+      if (this.down.down(e.keycode, mono)) {
         this.daily.keys++;
         burst = this.typingBurst.stroke(e.keycode, mono);
       }
-      this.down.add(e.keycode);
     }
-    if (e.type === "keyup") this.down.delete(e.keycode!);
+    if (e.type === "keyup") this.down.up(e.keycode!);
     if (e.type === "mousedown") {
       if (!this.buttons.has(e.button!)) this.daily.clicks++;
       this.buttons.add(e.button!);

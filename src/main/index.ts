@@ -16,14 +16,11 @@ import {
   renameSync,
   mkdirSync,
   appendFileSync,
+  statSync,
 } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { Engine } from "./engine";
-import {
-  petLines,
-  PET_SPEECH_MS,
-  STARTUP_SPEECH,
-} from "./pet-lines";
+import { petLines, PET_SPEECH_MS, STARTUP_SPEECH } from "./pet-lines";
 import { fastTypingLines } from "./typing-burst";
 import { Desktop, sceneBounds } from "./desktop";
 import { defaults, Settings, Snapshot, Input } from "../shared/types";
@@ -56,6 +53,7 @@ let storePath = "",
   logPath = "";
 let speechTimer: ReturnType<typeof setTimeout> | undefined;
 let tray: Tray | undefined;
+let rendererCrashes: number[] = [];
 function refreshTrayMenu() {
   tray?.setContextMenu(
     Menu.buildFromTemplate([
@@ -79,8 +77,34 @@ function createTray() {
   tray.setToolTip("懵薯");
   refreshTrayMenu();
 }
+// Diagnostics must never take the app down, and a failure that repeats every
+// few seconds (e.g. Explorer not running) must not grow the log without bound.
+const LOG_LIMIT = 1024 * 1024;
+let lastLog = "",
+  repeatedLogs = 0;
 const log = (s: string) => {
-  if (logPath) appendFileSync(logPath, `${new Date().toISOString()} ${s}\n`);
+  if (!logPath) return;
+  if (s === lastLog) {
+    repeatedLogs++;
+    return;
+  }
+  try {
+    if ((statSync(logPath, { throwIfNoEntry: false })?.size ?? 0) > LOG_LIMIT)
+      renameSync(logPath, logPath + ".old");
+    const stamp = new Date().toISOString();
+    appendFileSync(
+      logPath,
+      (repeatedLogs
+        ? `${stamp} (previous message repeated ${repeatedLogs}x)\n`
+        : "") + `${stamp} ${s}\n`,
+    );
+  } catch {}
+  lastLog = s;
+  repeatedLogs = 0;
+};
+const send = (channel: string, data?: unknown) => {
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+    win.webContents.send(channel, data);
 };
 const state = (): Snapshot => ({
   daily: engine.daily,
@@ -95,16 +119,19 @@ const state = (): Snapshot => ({
 });
 function publish() {
   if (engine.reminderUntil > Date.now()) clearSpeech();
-  if (!win.isDestroyed()) {
-    win.webContents.send("state", state());
-  }
+  send("state", state());
 }
 function save() {
-  writeFileSync(
-    storePath + ".tmp",
-    JSON.stringify({ settings, daily: engine.daily }),
-  );
-  renameSync(storePath + ".tmp", storePath);
+  // Runs on a timer: a full disk or an antivirus lock must not throw out of it.
+  try {
+    writeFileSync(
+      storePath + ".tmp",
+      JSON.stringify({ settings, daily: engine.daily }),
+    );
+    renameSync(storePath + ".tmp", storePath);
+  } catch (e) {
+    log("save failed " + String(e));
+  }
 }
 function load(w: BrowserWindow, query?: string) {
   const url = process.env.ELECTRON_RENDERER_URL;
@@ -142,6 +169,22 @@ function createScene() {
     if (!ready) say(STARTUP_SPEECH);
     ready = true;
     attach();
+  });
+  // A crashed or killed renderer otherwise leaves a blank, transparent window
+  // on the desktop forever. Reload it; repeated crashes back off.
+  const scene = win;
+  scene.webContents.on("render-process-gone", (_e, details) => {
+    log("renderer gone " + JSON.stringify(details));
+    if (quitting || details.reason === "clean-exit") return;
+    const now = Date.now();
+    rendererCrashes = rendererCrashes.filter((t) => now - t < 60_000);
+    rendererCrashes.push(now);
+    setTimeout(
+      () => {
+        if (!quitting && !scene.isDestroyed()) scene.webContents.reload();
+      },
+      rendererCrashes.length > 3 ? 30_000 : 1000,
+    );
   });
   win.on("close", (e) => {
     if (!quitting && desktop.alive()) {
@@ -196,7 +239,7 @@ function update(p: Partial<Settings>) {
     n.displayId = p.displayId ?? null;
   if (n.paused !== settings.paused) {
     engine.stop(performance.now(), Date.now());
-    win.webContents.send("reset-input");
+    send("reset-input");
   }
   settings = n;
   refreshTrayMenu();
@@ -211,7 +254,7 @@ function update(p: Partial<Settings>) {
   );
   if (layoutChanged) {
     if (settings.visible) attach();
-    else win.hide();
+    else if (!win.isDestroyed()) win.hide();
   }
   save();
   publish();
@@ -238,8 +281,7 @@ function interact(action: string) {
     const acknowledged = engine.reminderUntil > Date.now();
     engine.reminderUntil = 0;
     publish();
-    if (acknowledged && settings.visible && !win.isDestroyed())
-      win.webContents.send("meow");
+    if (acknowledged && settings.visible) send("meow");
     return;
   } else if (action === "debug-hour" && process.argv.includes("--smoke"))
     // Test-only shortcut for the hourly reminder; no longer in the tray.
@@ -248,12 +290,16 @@ function interact(action: string) {
     // The sound belongs to a newly accepted bubble, not to every mouse click.
     if (speechUntil > Date.now() || engine.reminderUntil > Date.now()) return;
     say(petLines[Math.floor(Math.random() * petLines.length)]);
-    if (Math.random() < 0.22 && settings.visible && !win.isDestroyed())
-      win.webContents.send("meow");
+    if (Math.random() < 0.22 && settings.visible) send("meow");
   }
   publish();
 }
+// The global hook runs in its own process; if it dies (driver hiccup, OOM,
+// killed by a security tool) bring it back instead of silently stopping counts.
+let inputRestarts: number[] = [];
+let inputRestartTimer: ReturnType<typeof setTimeout> | undefined;
 function startInput() {
+  clearTimeout(inputRestartTimer);
   worker?.kill();
   inputError = "";
   const current = utilityProcess.fork(join(__dirname, "input.js"));
@@ -271,6 +317,7 @@ function startInput() {
     clearTimeout(timeout);
     if (e.ready) {
       log("input ready");
+      inputError = "";
       publish();
       return;
     }
@@ -280,25 +327,31 @@ function startInput() {
       publish();
       return;
     }
-    if (locked || win.isDestroyed()) return;
+    if (locked) return;
     if (!settings.paused) {
       const burst = engine.input(e, performance.now(), Date.now());
       if (burst && settings.visible) {
         const choices = fastTypingLines.filter((line) => line !== lastFastLine);
         lastFastLine = choices[Math.floor(Math.random() * choices.length)];
         say(lastFastLine, 4500);
-        win.webContents.send("meow");
+        send("meow");
         publish();
       }
-      win.webContents.send("input", e);
+      // The scene only animates keys; movement/wheel/buttons stay in main.
+      if (e.type === "keydown" || e.type === "keyup") send("input", e);
     }
-    if (e.type === "mouseup" && e.button === 1 && settings.visible) {
+    if (
+      e.type === "mouseup" &&
+      e.button === 1 &&
+      settings.visible &&
+      !win.isDestroyed()
+    ) {
       try {
         if (desktop.desktopPoint(e.x!, e.y!)) {
           const b = desktop.bounds(win),
             factor = win.webContents.getZoomFactor();
           const d = screen.getDisplayMatching(sceneBounds(settings));
-          win.webContents.send("desktop-click", {
+          send("desktop-click", {
             x: (e.x! - b.left) / d.scaleFactor / factor,
             y: (e.y! - b.top) / d.scaleFactor / factor,
           });
@@ -311,10 +364,21 @@ function startInput() {
   current.on("exit", (code) => {
     clearTimeout(timeout);
     if (!quitting && worker === current) {
-      inputError = `键鼠监听已退出 (${code})，请重新启动懵薯`;
+      worker = null;
       engine.stop(performance.now(), Date.now());
+      send("reset-input");
+      const now = Date.now();
+      inputRestarts = inputRestarts.filter((t) => now - t < 600_000);
+      if (inputRestarts.length < 5) {
+        inputRestarts.push(now);
+        inputError = "";
+        log(`input exited (${code}), restarting`);
+        inputRestartTimer = setTimeout(startInput, 2000);
+      } else {
+        inputError = `键鼠监听已退出 (${code})，请重新启动懵薯`;
+        log(inputError);
+      }
       publish();
-      log(inputError);
     }
   });
 }
@@ -348,7 +412,7 @@ else {
       (powerMonitor as NodeJS.EventEmitter).on(event, () => {
         locked = true;
         engine.stop(performance.now(), Date.now());
-        win.webContents.send("reset-input");
+        send("reset-input");
         save();
         publish();
       });
@@ -366,8 +430,21 @@ else {
       if (ready && settings.visible && (win.isDestroyed() || !desktop.alive()))
         attach();
     }, 3000);
-    screen.on("display-metrics-changed", attach);
-    screen.on("display-removed", attach);
+    // Docking, resolution and DPI changes arrive as bursts of events; each
+    // attach hides and re-parents the window, so coalesce them into one.
+    let displayTimer: ReturnType<typeof setTimeout> | undefined;
+    const displayChanged = () => {
+      clearTimeout(displayTimer);
+      displayTimer = setTimeout(() => {
+        if (ready && settings.visible) attach();
+      }, 400);
+    };
+    for (const event of [
+      "display-metrics-changed",
+      "display-added",
+      "display-removed",
+    ] as const)
+      screen.on(event as "display-added", displayChanged);
     if (app.isPackaged && !process.argv.includes("--smoke"))
       app.setLoginItemSettings({
         openAtLogin: settings.autoStart,
@@ -377,13 +454,17 @@ else {
     log("app ready");
   });
   app.on("second-instance", () => {
-    if (ready) attach();
+    // Running the exe again is the documented way to bring the cat back.
+    if (!ready) return;
+    if (settings.visible) attach();
+    else update({ visible: true });
   });
   app.on("window-all-closed", () => {});
   app.on("before-quit", () => {
     quitting = true;
     tray?.destroy();
     clearTimeout(speechTimer);
+    clearTimeout(inputRestartTimer);
     worker?.kill();
     if (engine) {
       engine.stop(performance.now(), Date.now());

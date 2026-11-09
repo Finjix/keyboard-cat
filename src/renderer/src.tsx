@@ -12,6 +12,31 @@ import "./style.css";
 import { createMeowPlayer } from "./meow";
 import { createKeyPopLayer } from "./key-pops";
 import "./key-pops.css";
+import { HeldKeys } from "../shared/held-keys";
+const keyByCode = new Map(keys.map((k) => [k.code, k]));
+// Invisible anchors for paws and tests. Memoized so a held key's auto-repeat
+// or the once-a-second state push does not re-render all 104 of them.
+const KeyAnchors = React.memo(function KeyAnchors({
+  pressed,
+}: {
+  pressed: number[];
+}) {
+  return (
+    <>
+      {keys.map((k) => {
+        const r = keySurface(k);
+        return (
+          <div
+            key={k.code}
+            data-key={k.code}
+            className={pressed.includes(k.code) ? "key pressed" : "key"}
+            style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+          />
+        );
+      })}
+    </>
+  );
+});
 const initial: Snapshot = {
   daily: { date: "", keys: 0, clicks: 0, workMs: 0 },
   continuousMs: 0,
@@ -40,8 +65,19 @@ function App() {
     });
     window.mengshu.snapshot().then(set);
     const off = window.mengshu.subscribe(set);
-    const held = new Set<number>();
+    const held = new HeldKeys();
     let strokes: number[] = [];
+    let sweepTimer: number | undefined;
+    const stopSweep = () => {
+      window.clearInterval(sweepTimer);
+      sweepTimer = undefined;
+    };
+    // Release keys whose key-up never arrived so the paw returns to rest.
+    const sweep = () => {
+      if (held.sweep(performance.now()))
+        setPressed((a) => a.filter((c) => held.has(c)));
+      if (!held.size) stopSweep();
+    };
     let pace = 1;
     let motionTimer: number | undefined;
     const stopMotionTimer = () => {
@@ -73,21 +109,27 @@ function App() {
       if (strokes.length === 0 && pace === 1) stopMotionTimer();
     };
     const input = window.mengshu.input((e: Input) => {
+      const code = e.keycode;
+      if (code === undefined) return;
       if (e.type === "keydown") {
-        if (!held.has(e.keycode!)) {
-          held.add(e.keycode!);
-          strokes.push(performance.now());
+        const now = performance.now();
+        if (held.down(code, now)) {
+          strokes.push(now);
           // Tick at most ten times per second while typing and settling.
           if (motionTimer === undefined) {
             updatePace();
             motionTimer = window.setInterval(updatePace, 100);
           }
         }
-        setPressed((a) => [...a.filter((x) => x !== e.keycode), e.keycode!]);
+        sweepTimer ??= window.setInterval(sweep, 500);
+        // Auto-repeat of the newest key changes nothing: keep the same array.
+        setPressed((a) =>
+          a[a.length - 1] === code ? a : [...a.filter((x) => x !== code), code],
+        );
       }
       if (e.type === "keyup") {
-        held.delete(e.keycode!);
-        setPressed((a) => a.filter((x) => x !== e.keycode));
+        held.up(code);
+        setPressed((a) => (a.includes(code) ? a.filter((x) => x !== code) : a));
       }
     });
     const reset = () => {
@@ -96,22 +138,27 @@ function App() {
       strokes = [];
       pace = 1;
       stopMotionTimer();
+      stopSweep();
       applyPace();
     };
     const resize = () => setSize({ w: innerWidth, h: innerHeight });
-    let mask: HTMLCanvasElement | null = null;
+    let mask: CanvasRenderingContext2D | null = null;
     const click = (e: Event) => {
       const p = (e as CustomEvent).detail;
       const el = document
         .elementFromPoint(p.x, p.y)
         ?.closest<HTMLElement>("[data-action]");
       if (el instanceof HTMLImageElement) {
-        if (!mask) {
-          mask = document.createElement("canvas");
-          mask.width = el.naturalWidth;
-          mask.height = el.naturalHeight;
-          mask.getContext("2d")!.drawImage(el, 0, 0);
+        // Build the alpha mask only from a decoded image; a 0x0 mask cached
+        // from an early click would make the cat unclickable for good.
+        if (!mask && el.complete && el.naturalWidth) {
+          const canvas = document.createElement("canvas");
+          canvas.width = el.naturalWidth;
+          canvas.height = el.naturalHeight;
+          mask = canvas.getContext("2d", { willReadFrequently: true })!;
+          mask.drawImage(el, 0, 0);
         }
+        if (!mask) return;
         const r = el.getBoundingClientRect(),
           scale = Math.min(
             r.width / el.naturalWidth,
@@ -126,9 +173,9 @@ function App() {
         if (
           x < 0 ||
           y < 0 ||
-          x >= mask.width ||
-          y >= mask.height ||
-          mask.getContext("2d")!.getImageData(x, y, 1, 1).data[3] < 50
+          x >= mask.canvas.width ||
+          y >= mask.canvas.height ||
+          mask.getImageData(x, y, 1, 1).data[3] < 50
         )
           return;
       }
@@ -145,6 +192,7 @@ function App() {
       off();
       input();
       stopMotionTimer();
+      stopSweep();
       window.removeEventListener("desktop-click", click);
       window.removeEventListener("reset-input", reset);
       window.removeEventListener("resize", resize);
@@ -174,14 +222,14 @@ function App() {
     latest = (left: boolean) =>
       [...pressed]
         .reverse()
-        .map((c) => keys.find((k) => k.code === c))
+        .map((c) => keyByCode.get(c))
         .find((k) => k && (left ? k.x < 7.5 : k.x >= 7.5));
   const l = latest(true),
     r = latest(false);
   // Side flags refer to the screen. The front-facing cat's right paw is on
   // screen-left (R), and its left paw is on screen-right (main keyboard +/=).
-  const restR = keys.find((key) => key.code === 19)!;
-  const restPlus = keys.find((key) => key.code === 13)!;
+  const restR = keyByCode.get(19)!;
+  const restPlus = keyByCode.get(13)!;
   const pawStyle = (k: typeof l, right = false) => {
     const rest = keySurface(right ? restPlus : restR);
     const target = keySurface(k ?? (right ? restPlus : restR));
@@ -242,19 +290,7 @@ function App() {
             <aside>{s.desktopError || s.inputError}</aside>
           )}
         </section>
-        {keys.map((k) => (
-          <div
-            key={k.code}
-            data-key={k.code}
-            className={"key " + (pressed.includes(k.code) ? "pressed" : "")}
-            style={{
-              left: keySurface(k).x,
-              top: keySurface(k).y,
-              width: keySurface(k).w,
-              height: keySurface(k).h,
-            }}
-          />
-        ))}
+        <KeyAnchors pressed={pressed} />
       </div>
       <img
         className={"paw" + (l ? " is-active" : "")}

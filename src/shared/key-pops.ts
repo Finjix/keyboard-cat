@@ -177,7 +177,7 @@ export class KeyPops {
   }
 
   /** `held` holds the keys already down before this new press. */
-  press(code: number, held: ReadonlySet<number>): Pop {
+  press(code: number, held: { has(code: number): boolean }): Pop {
     this.presses++;
     const label = labels.get(code) ?? "";
     if (/^[A-Za-z0-9]$/.test(label))
