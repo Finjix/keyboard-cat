@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import { defaults, Snapshot, Input } from "../shared/types";
 import { keys } from "../shared/keyboard";
 import { keySurface } from "../shared/keyboard-art";
+import { keyboardView, projectKeyboardPoint } from "../shared/keyboard-view";
 import keyboardArt from "./assets/keyboard.png";
 import cat from "./assets/cat.png";
 import leftPaw from "./assets/paw-left.png";
 import rightPaw from "./assets/paw-right.png";
 import "./style.css";
+import { createMeowPlayer } from "./meow";
 const initial: Snapshot = {
   daily: { date: "", keys: 0, clicks: 0, workMs: 0 },
   continuousMs: 0,
@@ -25,29 +27,15 @@ function App() {
   const scene = useRef<HTMLDivElement>(null);
   const [s, set] = useState(initial),
     [pressed, setPressed] = useState<number[]>([]),
-    [menuOpen, setMenuOpen] = useState(false),
     [size, setSize] = useState({ w: innerWidth, h: innerHeight });
   function performAction(action: string) {
-    if (action === "settings") {
-      setMenuOpen((v) => !v);
-      return;
-    }
-    if (action === "autostart") {
-      void window.mengshu
-        .snapshot()
-        .then((s) =>
-          window.mengshu.update({ autoStart: !s.settings.autoStart }),
-        );
-      return;
-    }
-    if (action === "quit") {
-      window.mengshu.quit();
-      return;
-    }
-    if (action === "debug-hour") setMenuOpen(false);
     window.mengshu.interact(action as "pet" | "dismiss" | "debug-hour");
   }
   useEffect(() => {
+    const meow = createMeowPlayer();
+    const offMeow = window.mengshu.meow(() => {
+      void meow.play().catch((error) => console.warn("猫叫播放失败", error));
+    });
     window.mengshu.snapshot().then(set);
     const off = window.mengshu.subscribe(set);
     const held = new Set<number>();
@@ -143,12 +131,13 @@ function App() {
           return;
       }
       if (el) performAction(el.dataset.action!);
-      else setMenuOpen(false);
     };
     window.addEventListener("desktop-click", click);
     window.addEventListener("reset-input", reset);
     window.addEventListener("resize", resize);
     return () => {
+      offMeow();
+      meow.close();
       off();
       input();
       stopMotionTimer();
@@ -172,16 +161,18 @@ function App() {
   const pawStyle = (k: typeof l, right = false) => {
     const rest = keySurface(right ? restPlus : restR);
     const target = keySurface(k ?? (right ? restPlus : restR));
-    const x = 94 + target.x + target.w / 2;
-    const y = 630 + target.y + target.h / 2;
+    const { x, y } = projectKeyboardPoint(
+      target.x + target.w / 2,
+      target.y + target.h / 2,
+    );
+    const origin = projectKeyboardPoint(
+      rest.x + rest.w / 2,
+      rest.y + rest.h / 2,
+    );
     // Lean gently into the reach, with the paw tip remaining at the key.
     const reach = Math.max(
       -7,
-      Math.min(
-        7,
-        (94 + rest.x + rest.w / 2 - x) * 0.022 +
-          (y - (630 + rest.y + rest.h / 2)) * 0.015,
-      ),
+      Math.min(7, (origin.x - x) * 0.022 + (y - origin.y) * 0.015),
     );
     return {
       left: x,
@@ -197,13 +188,36 @@ function App() {
     >
       <img className="cat" src={cat} data-action="pet" draggable={false} />
       <div className="desk-shadow" />
-      <div className="keyboard">
+      <div
+        className="keyboard"
+        style={{
+          left: keyboardView.left,
+          top: keyboardView.top,
+          width: keyboardView.width,
+          height: keyboardView.height,
+        }}
+      >
         <img
           className="keyboard-art"
           src={keyboardArt}
-          alt="卡通键盘"
+          alt="透视立体键盘"
           draggable={false}
         />
+        <section className="stats" aria-label="今日统计">
+          <div className="stats-display">
+            <div className="metric">
+              <span>敲薯</span>
+              <strong>{s.daily.keys.toLocaleString()} 次</strong>
+            </div>
+            <div className="metric">
+              <span>今日工作</span>
+              <strong>{duration(s.daily.workMs)}</strong>
+            </div>
+          </div>
+          {(s.desktopError || s.inputError) && (
+            <aside>{s.desktopError || s.inputError}</aside>
+          )}
+        </section>
         {keys.map((k) => (
           <div
             key={k.code}
@@ -232,58 +246,8 @@ function App() {
         style={pawStyle(r, true)}
         draggable={false}
       />
-      <section className="stats" aria-label="今日统计">
-        <button
-          className="gear"
-          data-action="settings"
-          aria-label="设置"
-          aria-expanded={menuOpen}
-          onClick={() => performAction("settings")}
-        >
-          ⚙︎
-        </button>
-        {menuOpen && (
-          <div className="settings-menu" role="menu" aria-label="设置">
-            <button
-              role="menuitemcheckbox"
-              aria-checked={s.settings.autoStart}
-              data-action="autostart"
-              onClick={() => performAction("autostart")}
-            >
-              开机自启
-              <span aria-hidden="true">{s.settings.autoStart ? "✓" : ""}</span>
-            </button>
-            <button
-              role="menuitem"
-              data-action="debug-hour"
-              onClick={() => performAction("debug-hour")}
-            >
-              调试：连续工作 1h
-            </button>
-            <button
-              role="menuitem"
-              data-action="quit"
-              onClick={() => performAction("quit")}
-            >
-              退出
-            </button>
-          </div>
-        )}
 
-        <div className="metric">
-          <span>敲薯</span>
-          <strong>{s.daily.keys.toLocaleString()} 次</strong>
-        </div>
-        <div className="metric">
-          <span>今日工作</span>
-          <strong>{duration(s.daily.workMs)}</strong>
-        </div>
-        {(s.desktopError || s.inputError) && (
-          <aside>{s.desktopError || s.inputError}</aside>
-        )}
-      </section>
-      {s.speech && <div className="speech pet-speech">{s.speech}</div>}
-      {s.reminderUntil > 0 && (
+      {s.reminderUntil > 0 ? (
         <div className="speech rest-speech" role="status">
           <div className="rest-message">{s.reminderText}</div>
           <div className="rest-footer">
@@ -297,7 +261,9 @@ function App() {
             </button>
           </div>
         </div>
-      )}
+      ) : s.speech ? (
+        <div className="speech pet-speech">{s.speech}</div>
+      ) : null}
     </div>
   );
 }

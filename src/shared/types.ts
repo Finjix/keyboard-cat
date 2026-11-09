@@ -13,7 +13,7 @@ export const defaults: Settings = {
   autoStart: true,
   displayId: null,
   area: 0.625,
-  x: 0.5,
+  x: 5 / 8,
   y: 0.5,
 };
 export interface Daily {
@@ -44,6 +44,7 @@ export interface Bridge {
   snapshot: () => Promise<Snapshot>;
   subscribe: (fn: (s: Snapshot) => void) => () => void;
   input: (fn: (e: Input) => void) => () => void;
+  meow: (fn: () => void) => () => void;
   update: (s: Partial<Settings>) => Promise<void>;
   interact: (action: "pet" | "dismiss" | "debug-hour") => void;
   quit: () => void;

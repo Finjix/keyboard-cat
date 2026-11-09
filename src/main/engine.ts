@@ -1,5 +1,6 @@
 import { Daily, Input } from "../shared/types";
 import { restLines } from "./rest-lines";
+import { TypingBurst } from "./typing-burst";
 export const IDLE = 300_000,
   HOUR = 3_600_000,
   BUBBLE = 1_800_000;
@@ -18,6 +19,7 @@ export class Engine {
   private next = HOUR;
   private down = new Set<number>();
   private buttons = new Set<number>();
+  private typingBurst = new TypingBurst();
   constructor(mono: number, wall: number, saved?: Daily) {
     this.cursor = mono;
     this.wall = wall;
@@ -56,6 +58,7 @@ export class Engine {
         this.next = HOUR;
         this.down.clear();
         this.buttons.clear();
+        this.typingBurst.reset();
       }
     }
     this.cursor = mono;
@@ -75,8 +78,12 @@ export class Engine {
   input(e: Input, mono: number, wall: number) {
     this.tick(mono, wall);
     this.last = mono;
+    let burst = false;
     if (e.type === "keydown" && e.keycode !== undefined) {
-      if (!this.down.has(e.keycode)) this.daily.keys++;
+      if (!this.down.has(e.keycode)) {
+        this.daily.keys++;
+        burst = this.typingBurst.stroke(e.keycode, mono);
+      }
       this.down.add(e.keycode);
     }
     if (e.type === "keyup") this.down.delete(e.keycode!);
@@ -85,6 +92,7 @@ export class Engine {
       this.buttons.add(e.button!);
     }
     if (e.type === "mouseup") this.buttons.delete(e.button!);
+    return burst;
   }
   stop(mono: number, wall: number) {
     this.tick(mono, wall);
@@ -93,5 +101,6 @@ export class Engine {
     this.next = HOUR;
     this.down.clear();
     this.buttons.clear();
+    this.typingBurst.reset();
   }
 }

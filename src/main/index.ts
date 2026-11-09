@@ -6,6 +6,8 @@ import {
   screen,
   utilityProcess,
   UtilityProcess,
+  Tray,
+  Menu,
 } from "electron";
 import { join } from "node:path";
 import {
@@ -17,7 +19,13 @@ import {
 } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { Engine } from "./engine";
-import { petLines, PET_SPEECH_MS } from "./pet-lines";
+import {
+  petLines,
+  PET_SPEECH_MS,
+  STARTUP_SPEECH,
+  STARTUP_SPEECH_MS,
+} from "./pet-lines";
+import { fastTypingLines } from "./typing-burst";
 import { Desktop, sceneBounds } from "./desktop";
 import { defaults, Settings, Snapshot, Input } from "../shared/types";
 app.setName("懵薯");
@@ -48,6 +56,35 @@ let settings = { ...defaults },
 let storePath = "",
   logPath = "";
 let speechTimer: ReturnType<typeof setTimeout> | undefined;
+let tray: Tray | undefined;
+function refreshTrayMenu() {
+  tray?.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        id: "autostart",
+        label: "开机自启",
+        type: "checkbox",
+        checked: settings.autoStart,
+        click: () => update({ autoStart: !settings.autoStart }),
+      },
+      {
+        id: "debug-hour",
+        label: "调试：连续工作 1h",
+        click: () => interact("debug-hour"),
+      },
+      { id: "quit", label: "退出", click: () => app.quit() },
+    ]),
+  );
+}
+function createTray() {
+  tray = new Tray(
+    app.isPackaged
+      ? join(process.resourcesPath, "icon.ico")
+      : join(__dirname, "../../build/icon.ico"),
+  );
+  tray.setToolTip("懵薯");
+  refreshTrayMenu();
+}
 const log = (s: string) => {
   if (logPath) appendFileSync(logPath, `${new Date().toISOString()} ${s}\n`);
 };
@@ -63,7 +100,10 @@ const state = (): Snapshot => ({
   inputError,
 });
 function publish() {
-  if (!win.isDestroyed()) win.webContents.send("state", state());
+  if (engine.reminderUntil > Date.now()) clearSpeech();
+  if (!win.isDestroyed()) {
+    win.webContents.send("state", state());
+  }
 }
 function save() {
   writeFileSync(
@@ -100,10 +140,12 @@ function createScene() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       sandbox: true,
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
   win.setIgnoreMouseEvents(true);
   win.webContents.on("did-finish-load", () => {
+    if (!ready) say(STARTUP_SPEECH, STARTUP_SPEECH_MS);
     ready = true;
     attach();
   });
@@ -163,6 +205,7 @@ function update(p: Partial<Settings>) {
     win.webContents.send("reset-input");
   }
   settings = n;
+  refreshTrayMenu();
   if (app.isPackaged && !process.argv.includes("--smoke"))
     app.setLoginItemSettings({
       openAtLogin: settings.autoStart,
@@ -179,19 +222,38 @@ function update(p: Partial<Settings>) {
   save();
   publish();
 }
+function clearSpeech() {
+  clearTimeout(speechTimer);
+  speechTimer = undefined;
+  speech = "";
+  speechUntil = 0;
+}
+function say(text: string, duration = PET_SPEECH_MS) {
+  if (engine.reminderUntil > Date.now()) return;
+  speech = text;
+  speechUntil = Date.now() + duration;
+  clearTimeout(speechTimer);
+  speechTimer = setTimeout(() => {
+    clearSpeech();
+    publish();
+  }, duration);
+}
+let lastFastLine = "";
 function interact(action: string) {
-  if (action === "dismiss") engine.reminderUntil = 0;
-  else if (action === "debug-hour") engine.remind(Date.now());
+  if (action === "dismiss") {
+    const acknowledged = engine.reminderUntil > Date.now();
+    engine.reminderUntil = 0;
+    publish();
+    if (acknowledged && settings.visible && !win.isDestroyed())
+      win.webContents.send("meow");
+    return;
+  } else if (action === "debug-hour") engine.remind(Date.now());
   else if (action === "pet") {
-    speech = petLines[Math.floor(Math.random() * petLines.length)];
-    speechUntil = Date.now() + PET_SPEECH_MS;
-    clearTimeout(speechTimer);
-    speechTimer = setTimeout(() => {
-      speech = "";
-      speechUntil = 0;
-      speechTimer = undefined;
-      publish();
-    }, PET_SPEECH_MS);
+    // The sound belongs to a newly accepted bubble, not to every mouse click.
+    if (speechUntil > Date.now() || engine.reminderUntil > Date.now()) return;
+    say(petLines[Math.floor(Math.random() * petLines.length)]);
+    if (Math.random() < 0.22 && settings.visible && !win.isDestroyed())
+      win.webContents.send("meow");
   }
   publish();
 }
@@ -224,7 +286,14 @@ function startInput() {
     }
     if (locked || win.isDestroyed()) return;
     if (!settings.paused) {
-      engine.input(e, performance.now(), Date.now());
+      const burst = engine.input(e, performance.now(), Date.now());
+      if (burst && settings.visible) {
+        const choices = fastTypingLines.filter((line) => line !== lastFastLine);
+        lastFastLine = choices[Math.floor(Math.random() * choices.length)];
+        say(lastFastLine, 4500);
+        win.webContents.send("meow");
+        publish();
+      }
       win.webContents.send("input", e);
     }
     if (e.type === "mouseup" && e.button === 1 && settings.visible) {
@@ -273,6 +342,7 @@ else {
     engine = new Engine(performance.now(), Date.now(), saved?.daily);
     desktop = new Desktop();
     createScene();
+    createTray();
     startInput();
     ipcMain.handle("snapshot", () => state());
     ipcMain.handle("update", (_e, p) => update(p));
@@ -316,6 +386,7 @@ else {
   app.on("window-all-closed", () => {});
   app.on("before-quit", () => {
     quitting = true;
+    tray?.destroy();
     clearTimeout(speechTimer);
     worker?.kill();
     if (engine) {

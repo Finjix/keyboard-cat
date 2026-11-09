@@ -1,3 +1,25 @@
+# 当前键盘：重新生成三维透视素材
+
+`src/renderer/assets/keyboard.png` 已用内置 imagegen 重新生成（2172×724，透明背景），以旧图作为颜色和布局参考，重新绘制键帽正面、键间凹槽和底壳厚度；空格键无爪印。随后使用内置 imagegen 清理外轮廓背景。渲染直接按图片原始宽高比显示，已移除 CSS perspective/rotateX 和模拟底壳。`keyboard-art.ts` 按新图片重新测量键帽顶面供高亮和猫爪落点使用。
+
+生成提示词：
+
+> Use case: stylized-concept. Generate a NEW genuinely three-dimensional full-size 104-key keyboard sprite, using the attached keyboard ONLY as a palette, material and key-layout reference. Re-render the entire keyboard from a camera centered in front and ABOVE it, looking down at about 50 degrees elevation. The long front edge is horizontal, the back edge is narrower, left and right edges converge symmetrically; no yaw or diagonal rotation. Clearly visible sculpted tall individual keycaps with FRONT VERTICAL FACES and thickness, recessed key wells, ambient occlusion, a substantial rounded sage-green case with a visible front vertical wall. This must be a real 3D-render-style object with correct new surfaces and lighting, NOT a flat top-down image skewed into a trapezoid. Warm ivory alphanumeric keys, sage green modifiers and case, buttery yellow Esc and main Enter and numpad Enter. Same standard US ANSI 104-key arrangement as reference: F row, main typing block, navigation cluster with inverted T arrows, full numpad with double-height plus and enter. Clear accurate dark key legends. Completely BLANK cream spacebar. NO paw prints, logos, animals or decorations. Cozy polished soft matte plastic / clay 3D render, soft upper-left studio lighting, natural shadows between keys. Isolated actual transparent background, no floor, no scene, no text outside keys. Wide 3:1 transparent canvas, keyboard fills width with a small safe margin; full case visible, no cropping. Centered symmetric front-above view suitable for a cat sitting behind and typing.
+
+清理提示词：
+
+> Precise background cleanup of this keyboard render. Preserve the entire 3D keyboard, perspective, thick front faces of all keycaps, case, legends, geometry, colors and size EXACTLY. Remove ALL scattered white, yellow, green, grey speckles and ragged halo artifacts OUTSIDE the outer keyboard silhouette. Outside the continuous smooth rounded outer case outline must be completely empty transparent alpha. Clean antialiased outer edge. No floor, glow, haze, shadow cloud, checkerboard or extra pixels outside keyboard. Keep full keyboard within canvas with a small clear transparent margin. Do not change camera, layout or key positions. Return the clean transparent keyboard sprite.
+
+以下为已替换的历史方案。
+
+# 键盘去爪印与透视
+
+`src/renderer/assets/keyboard.png` 使用内置 imagegen 局部编辑，去掉空格键爪印，保留透明背景与原尺寸 2172×724。运行时用 1100px 透视距离、35° X 轴倾角呈现前宽后窄的键盘，并增加底壳厚度与阴影。`src/shared/keyboard-view.ts` 统一键盘相机与猫爪落点投影；按键高亮随整个键盘平面变换。
+
+原始编辑提示词（内置工具，未使用 CLI）：
+
+> Edit target: provided full-size keyboard PNG asset. Precise object edit: remove only the green paw-print icon from the center of the cream spacebar. Fill the removed print seamlessly with the same smooth cream keycap surface and subtle shading, leaving the spacebar completely blank. Preserve EXACT keyboard geometry, straight top-down camera, key positions, layout, ALL legends, colors, outer margins and aspect ratio of the original image. Preserve transparent background. Do not crop, rotate, redesign or add anything. This image is used with coordinate-mapped key highlights, so exact geometry matters. Return the complete keyboard with the only change being removal of the paw icon.
+
 # 1.0.8 爪子顶部修整
 
 `src/renderer/assets/paw-left.png` 与 `paw-right.png` 在朝向归一化后增加圆弧型根部蒙版和 22 像素的平滑 alpha 过渡。改动仅在顶部连接区域；两张图尺寸、下方 120 行起的全部 RGBA 像素均与 1.0.7 校验一致。处理已写入 `scripts/extract-photo-paws.py`，可从原照片复现。

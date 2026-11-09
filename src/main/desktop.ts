@@ -160,7 +160,7 @@ export function sceneBounds(settings: {
   const width = Math.round(1440 * scale),
     height = Math.round(960 * scale);
   return {
-    x: Math.round(b.x + (b.width - width) * settings.x),
+    x: Math.round(b.x + b.width * settings.x - width / 2),
     y: Math.round(b.y + (b.height - height) * settings.y),
     width,
     height,

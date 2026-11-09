@@ -9,6 +9,7 @@ const bridge: Bridge = {
   snapshot: () => ipcRenderer.invoke("snapshot"),
   subscribe: (fn) => listen("state", fn),
   input: (fn) => listen("input", fn),
+  meow: (fn) => listen("meow", fn),
   update: (s) => ipcRenderer.invoke("update", s),
   interact: (a) => ipcRenderer.send("interact", a),
   quit: () => ipcRenderer.send("quit"),

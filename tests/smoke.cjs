@@ -25,14 +25,112 @@ const path = require("node:path");
     console.log("state", state);
     if (state.desktopError || state.inputError)
       throw Error("Native startup failed");
+    const greeting = "人好喵~我素懵薯！我树薯薯养的键盘喵喵。";
+    if (
+      state.speech !== greeting ||
+      (await page.locator(".pet-speech").textContent()) !== greeting
+    )
+      throw Error("Startup must show the exact welcome message");
+    const greetingRemaining = state.speechUntil - Date.now();
+    if (greetingRemaining < 5000 || greetingRemaining > 10000)
+      throw Error("Startup welcome must use a ten-second timer");
+    await page.evaluate(() => {
+      window.mengshu.interact("pet");
+      window.mengshu.interact("pet");
+    });
+    await page.waitForTimeout(100);
+    const greetingAfterClicks = await page.evaluate(() =>
+      window.mengshu.snapshot(),
+    );
+    if (
+      greetingAfterClicks.speech !== greeting ||
+      greetingAfterClicks.speechUntil !== state.speechUntil
+    )
+      throw Error(
+        "Cat clicks must not replace or extend the ten-second welcome",
+      );
+    await page.screenshot({
+      path: "docs/startup-preview.png",
+      omitBackground: true,
+    });
+    await page.waitForTimeout(
+      Math.max(0, state.speechUntil - Date.now() - 250),
+    );
+    if ((await page.locator(".pet-speech").textContent()) !== greeting)
+      throw Error("Startup welcome must remain visible until its timer ends");
+    await page.waitForFunction(
+      () => !document.querySelector(".pet-speech"),
+      null,
+      { timeout: 1500 },
+    );
+    // The desktop is click-through, so the sound must work without a user gesture.
+    await page.evaluate(() => {
+      window.__meowAudio = null;
+      window.__meowCount = 0;
+      window.__meowEvents = 0;
+      window.mengshu.meow(() => {
+        window.__meowEvents++;
+      });
+      const original = AudioContext.prototype.createBufferSource;
+      AudioContext.prototype.createBufferSource = function (...args) {
+        window.__meowAudio = this;
+        window.__meowCount++;
+        return original.apply(this, args);
+      };
+    });
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.send("meow"),
+    );
+    await page.waitForFunction(() => window.__meowAudio?.state === "running");
+    if (!process.env.MENGSHU_EXE) {
+      const { readdirSync } = require("node:fs");
+      const { pathToFileURL } = require("node:url");
+      const assets = path.resolve("out/renderer/assets");
+      const urls = readdirSync(assets)
+        .filter((name) => /^(meow|dog|other)-.*\.mp3$/.test(name))
+        .map((name) => pathToFileURL(path.join(assets, name)).href);
+      if (urls.length !== 39)
+        throw Error("Build must include all 39 animal recordings");
+      const durations = await page.evaluate(async (urls) => {
+        const context = new AudioContext();
+        try {
+          return await Promise.all(
+            urls.map(async (url) => {
+              const response = await fetch(url);
+              const buffer = await context.decodeAudioData(
+                await response.arrayBuffer(),
+              );
+              if (
+                !buffer
+                  .getChannelData(0)
+                  .some((sample) => Math.abs(sample) > 0.0001)
+              )
+                throw Error("Silent cat recording: " + url);
+              return buffer.duration;
+            }),
+          );
+        } finally {
+          await context.close();
+        }
+      }, urls);
+      if (durations.some((duration) => duration < 0.3 || duration > 4))
+        throw Error("Animal recordings must be short and decodable");
+      console.log(
+        "decoded mixed animal clips",
+        durations.length,
+        "duration range",
+        Math.min(...durations),
+        Math.max(...durations),
+      );
+    }
     const bounds = await app.evaluate(({ BrowserWindow, screen }) => ({
       actual: BrowserWindow.getAllWindows()[0].getBounds(),
       primary: screen.getPrimaryDisplay().workArea,
     }));
     if (
       bounds.actual.x < bounds.primary.x ||
-      bounds.actual.x + bounds.actual.width >
-        bounds.primary.x + bounds.primary.width
+      Math.abs(bounds.actual.x + bounds.actual.width / 2 -
+        (bounds.primary.x + bounds.primary.width * 5 / 8)) > 1
     )
       throw Error("Primary display placement failed");
     if (!(await page.locator("img.keyboard-art").count()))
@@ -112,6 +210,49 @@ const path = require("node:path");
     const restLeft = await page
       .locator(".paw:not(.right)")
       .getAttribute("style");
+    // Perspective is baked into the sprite, not a DOM transformation.
+    if (
+      await page
+        .locator(".keyboard")
+        .evaluate((el) => getComputedStyle(el).transform !== "none")
+    )
+      throw Error("Generated keyboard must not be CSS transformed");
+    // Check reaches across measured image faces, including front corners.
+    for (const [keycode, selector] of [
+      [1, ".paw:not(.right)"],
+      [29, ".paw:not(.right)"],
+      [13, ".paw.right"],
+      [83, ".paw.right"],
+    ]) {
+      await send({ type: "keydown", keycode });
+      await page.waitForTimeout(180);
+      const offset = await page.evaluate(
+        ({ keycode, selector }) => {
+          const scene = document
+            .querySelector(".scene")
+            .getBoundingClientRect();
+          const key = document
+            .querySelector(`[data-key="${keycode}"]`)
+            .getBoundingClientRect();
+          const paw = document.querySelector(selector);
+          const scale = scene.width / 1440;
+          return (
+            Math.hypot(
+              scene.left +
+                parseFloat(paw.style.left) * scale -
+                (key.x + key.width / 2),
+              scene.top +
+                parseFloat(paw.style.top) * scale -
+                (key.y + key.height / 2),
+            ) / scale
+          );
+        },
+        { keycode, selector },
+      );
+      if (offset > 2)
+        throw Error(`Paw misses projected key ${keycode}: ${offset}px`);
+      await send({ type: "keyup", keycode });
+    }
     const angles = [];
     for (const keycode of [30, 20]) {
       await send({ type: "keydown", keycode });
@@ -225,42 +366,116 @@ const path = require("node:path");
       keyCount + 1
     )
       throw Error("Native key count missing");
-    await click(".cat", 0.3, 0.4);
+    const catClickWithRandom = async (roll) => {
+      await app.evaluate((_, roll) => {
+        globalThis.__originalRandom = Math.random;
+        Math.random = () => roll;
+      }, roll);
+      try {
+        await click(".cat", 0.3, 0.4);
+      } finally {
+        await app.evaluate(() => {
+          Math.random = globalThis.__originalRandom;
+        });
+      }
+    };
+    const meowsBeforePet = await page.evaluate(() => window.__meowCount);
+    const petClickStarted = Date.now();
+    await catClickWithRandom(0.219999);
     if (!(await page.locator(".pet-speech").count()))
       throw Error("Pet dialogue missing");
     const speechState = await page.evaluate(() => window.mengshu.snapshot());
-    const remaining = speechState.speechUntil - Date.now();
-    if (remaining < 2500 || remaining > 3000)
+    if (
+      speechState.speechUntil < petClickStarted + 3000 ||
+      speechState.speechUntil > Date.now() + 3000
+    )
       throw Error("Pet dialogue must expire in 3 seconds");
-    await page.waitForTimeout(1700);
-    await click(".cat", 0.3, 0.4);
-    await page.waitForTimeout(1700);
-    if (!(await page.locator(".pet-speech").count()))
-      throw Error("Clicking again must restart the 3-second speech timer");
+    await catClickWithRandom(0.22);
+    const speechAfterClick = await page.evaluate(() =>
+      window.mengshu.snapshot(),
+    );
+    if (
+      speechAfterClick.speech !== speechState.speech ||
+      speechAfterClick.speechUntil !== speechState.speechUntil
+    )
+      throw Error(
+        "Clicks must not replace active dialogue or restart its timer",
+      );
+    await page.waitForFunction(
+      (before) => window.__meowCount === before + 1,
+      meowsBeforePet,
+    );
     await page.waitForFunction(
       () => !document.querySelector(".pet-speech"),
       null,
-      { timeout: 1700 },
+      { timeout: 3500 },
     );
-    await click(".gear");
-    if (!(await page.locator("[role=menu]").count()))
-      throw Error("Gear menu did not open");
-    const labels = await page.locator("[role=menu] button").allTextContents();
+    if ((await page.evaluate(() => window.__meowCount)) !== meowsBeforePet + 1)
+      throw Error("Cat clicks at or above the 22% threshold must stay silent");
+    if (await page.locator(".pet-speech").count())
+      throw Error("Repeated clicks must not prolong the three-second bubble");
+    await catClickWithRandom(0.22);
+    await page.waitForSelector(".pet-speech");
+    const eventsBeforeBlockedClick = await page.evaluate(
+      () => window.__meowEvents,
+    );
+    await catClickWithRandom(0);
     if (
-      labels.length !== 3 ||
-      !labels[0].includes("开机自启") ||
-      labels[1] !== "调试：连续工作 1h" ||
-      labels[2] !== "退出"
+      (await page.evaluate(() => window.__meowEvents)) !==
+      eventsBeforeBlockedClick
     )
-      throw Error("Settings must contain autostart, debug hour and quit");
-    await page.screenshot({
-      path: "docs/settings-preview.png",
-      omitBackground: true,
+      throw Error("A blocked cat click must not roll or emit a meow");
+    if (
+      (await page.evaluate(() => window.mengshu.snapshot())).speechUntil <=
+      speechState.speechUntil
+    )
+      throw Error("A fresh click after expiry must allow new dialogue");
+    if (await page.locator(".gear, .settings-menu").count())
+      throw Error("Desktop gear and menu must be removed");
+    await app.evaluate(({ Tray }) => {
+      const original = Tray.prototype.setContextMenu;
+      Tray.prototype.setContextMenu = function (menu) {
+        globalThis.__tray = this;
+        globalThis.__trayMenu = menu;
+        return original.call(this, menu);
+      };
     });
+    const currentAutoStart = (
+      await page.evaluate(() => window.mengshu.snapshot())
+    ).settings.autoStart;
+    await page.evaluate(
+      (autoStart) => window.mengshu.update({ autoStart }),
+      currentAutoStart,
+    );
+    const trayState = await app.evaluate(() => ({
+      alive: !globalThis.__tray.isDestroyed(),
+      bounds: globalThis.__tray.getBounds(),
+      labels: globalThis.__trayMenu.items.map((item) => item.label),
+    }));
+    if (
+      !trayState.alive ||
+      trayState.bounds.width <= 0 ||
+      trayState.labels.join(",") !== "开机自启,调试：连续工作 1h,退出"
+    )
+      throw Error("Native tray icon and settings menu must be available");
+    const trayClick = (id) =>
+      app.evaluate((_, id) => {
+        const item = globalThis.__trayMenu.getMenuItemById(id);
+        item.click(item, null, {});
+      }, id);
+    await catClickWithRandom(0.22);
+    await page.waitForSelector(".pet-speech");
     const beforeDebug = await page.evaluate(() => window.mengshu.snapshot());
-    await click("[data-action=debug-hour]");
+    const meowsBeforeReminder = await page.evaluate(() => window.__meowCount);
+    await trayClick("debug-hour");
     await page.waitForSelector(".rest-speech");
     const afterDebug = await page.evaluate(() => window.mengshu.snapshot());
+    if (
+      (await page.locator(".speech").count()) !== 1 ||
+      afterDebug.speech ||
+      afterDebug.speechUntil
+    )
+      throw Error("Rest reminder must replace and discard the previous speech");
     if (
       !afterDebug.reminderText ||
       (await page.locator(".rest-message").textContent()) !==
@@ -280,8 +495,24 @@ const path = require("node:path");
       afterDebug.continuousMs - beforeDebug.continuousMs > 5000
     )
       throw Error("Debug hour must not inflate recorded work time");
-    if (await page.locator("[role=menu]").count())
-      throw Error("Debug action must close the settings menu");
+    await page.waitForTimeout(1100);
+    const eventsDuringReminder = await page.evaluate(() => window.__meowEvents);
+    await catClickWithRandom(0);
+    if (
+      (await page.evaluate(() => window.__meowEvents)) !== eventsDuringReminder
+    )
+      throw Error("Clicking a cat during a reminder must not emit a meow");
+    if (
+      (await page.locator(".speech").count()) !== 1 ||
+      (await page.locator(".rest-message").textContent()) !==
+        afterDebug.reminderText ||
+      (await page.evaluate(() => window.mengshu.snapshot())).speech
+    )
+      throw Error(
+        "Pet speech must not interrupt or queue behind a rest reminder",
+      );
+    if ((await page.evaluate(() => window.__meowCount)) !== meowsBeforeReminder)
+      throw Error("Rest reminder must stay silent until acknowledged");
     await page.screenshot({
       path: "docs/rest-reminder-preview.png",
       omitBackground: true,
@@ -292,33 +523,35 @@ const path = require("node:path");
     await click(".rest-dismiss");
     if (await page.locator(".rest-speech").count())
       throw Error("Acknowledgement button must close the rest reminder");
-    await click(".gear");
+    if (await page.locator(".speech").count())
+      throw Error("Dismissal must not restore stale lower-priority speech");
+    await page.waitForFunction(
+      (before) => window.__meowCount === before + 1,
+      meowsBeforeReminder,
+    );
+    await page.evaluate(() => window.mengshu.interact("dismiss"));
+    await page.waitForTimeout(150);
+    if (
+      (await page.evaluate(() => window.__meowCount)) !==
+      meowsBeforeReminder + 1
+    )
+      throw Error("Repeated acknowledgement must not play another meow");
     const original = (await page.evaluate(() => window.mengshu.snapshot()))
       .settings.autoStart;
-    await click("[data-action=autostart]");
-    await page.waitForFunction(
-      (value) =>
-        document
-          .querySelector("[role=menuitemcheckbox]")
-          ?.getAttribute("aria-checked") === String(!value),
-      original,
-    );
-    if (
-      (await page.evaluate(() => window.mengshu.snapshot())).settings
-        .autoStart === original
-    )
-      throw Error("Autostart toggle failed");
-    await click("[data-action=autostart]");
-    await page.waitForFunction(
-      (value) =>
-        document
-          .querySelector("[role=menuitemcheckbox]")
-          ?.getAttribute("aria-checked") === String(value),
-      original,
-    );
-    await click(".gear");
-    if (await page.locator("[role=menu]").count())
-      throw Error("Gear menu did not close");
+    for (const expected of [!original, original]) {
+      await trayClick("autostart");
+      if (
+        (await page.evaluate(() => window.mengshu.snapshot())).settings
+          .autoStart !== expected
+      )
+        throw Error("Tray autostart action must update settings");
+      if (
+        (await app.evaluate(
+          () => globalThis.__trayMenu.getMenuItemById("autostart").checked,
+        )) !== expected
+      )
+        throw Error("Tray checkbox must track the current autostart setting");
+    }
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].destroy(),
     );
@@ -327,23 +560,17 @@ const path = require("node:path");
       throw Error("Desktop recovery failed");
     const recovered = (await app.windows())[0];
     await recovered.waitForLoadState("domcontentloaded");
-    const b = await recovered.locator(".gear").boundingBox();
-    await app.evaluate(
-      ({ BrowserWindow }, p) =>
-        BrowserWindow.getAllWindows()[0].webContents.send("desktop-click", p),
-      { x: b.x + b.width / 2, y: b.y + b.height / 2 },
-    );
-    await recovered.waitForSelector("[data-action=quit]");
-    const q = await recovered.locator("[data-action=quit]").boundingBox();
+    if (await recovered.locator(".pet-speech").count())
+      throw Error("Desktop recovery must not repeat the startup welcome");
+    if (await recovered.locator(".gear").count())
+      throw Error("Recovery must not restore the gear");
+    if (await app.evaluate(() => globalThis.__tray.isDestroyed()))
+      throw Error("Tray must survive desktop recovery");
     const exit = app.waitForEvent("close");
-    await app.evaluate(
-      ({ BrowserWindow }, p) =>
-        BrowserWindow.getAllWindows()[0].webContents.send("desktop-click", p),
-      { x: q.x + q.width / 2, y: q.y + q.height / 2 },
-    );
+    await trayClick("quit");
     await exit;
     console.log(
-      "smoke passed: idle motion, key-dependent rotation, reduced motion, native input, gear routing, debug rest reminder, persisted toggle, recovery, quit",
+      "smoke passed: idle motion, key-dependent rotation, reduced motion, native input, native tray routing, debug rest reminder, persisted toggle, recovery, quit",
     );
   } finally {
     if (!closed) await app.close();
