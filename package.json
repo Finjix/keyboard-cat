@@ -62,16 +62,11 @@
       }
     ],
     "artifactName": "懵薯-${version}-Windows-x64.${ext}",
-    "extraFiles": [
-      {
-        "from": "build/meow-audio-credits.txt",
-        "to": "猫叫素材来源.txt"
-      },
-      {
-        "from": "build/portable-readme.txt",
-        "to": "使用说明.txt"
-      }
-    ]
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "afterPack": "scripts/after-pack.cjs"
   },
   "overrides": {
     "minimatch": "^11.0.2"

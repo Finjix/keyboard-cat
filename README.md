@@ -77,7 +77,7 @@ Windows 的 WorkerW 桌面层属于 Shell 实现细节；桌面结构变化时�
 
 轮廓以 `scripts/cat-outline.json` 中的 118 个手工锚点为准，逐段核对耳缘、头顶、两侧脸颊、颈肩和躯干。运行 `python scripts/refine-cat-manual.py` 可从原照片重建 alpha（仅制作素材时需要 Pillow、NumPy、opencv-python）。RGB 完全来自原图；`docs/edge-review` 保存放大描线及深浅背景复查图。
 
-`npm run dist` 只构建 ZIP，包内包含完整 Electron 运行时和使用说明，解压即用。历史版本的 Setup 文件不属于当前分发。
+`npm run dist` 只构建 ZIP，包内仅包含运行所需文件（中文语言包），解压即用。历史版本的 Setup 文件不属于当前分发。
 
 ## 1.0.4 毛尖细节
 
