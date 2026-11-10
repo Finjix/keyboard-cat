@@ -40,6 +40,8 @@ export interface Snapshot {
   speech: string;
   speechUntil: number;
   settings: Settings;
+  /** Other windows hide the whole scene: idle and panel motion pause. */
+  covered: boolean;
   desktopError: string;
   inputError: string;
 }
@@ -49,6 +51,8 @@ export type Input = {
   button?: number;
   x?: number;
   y?: number;
+  /** Keydown only: modifiers Windows reports as down now (shared/modifiers). */
+  mods?: number;
 };
 export type Action = "pet" | "frenzy" | "frenzy-end" | "dismiss" | "debug-hour";
 /** Where the scene sits inside the full-work-area window (CSS px). */

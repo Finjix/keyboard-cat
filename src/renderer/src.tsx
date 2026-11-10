@@ -19,6 +19,13 @@ import "./panel-effects.css";
 import { HeldKeys } from "../shared/held-keys";
 import { ClickFrenzy, FRENZY_MS } from "../shared/click-frenzy";
 import { createCatMotion, KEY_BOUNCE_CHANCE } from "./cat-motion";
+import {
+  alignIdleMotion,
+  drivePanelMotion,
+  installIdleKeyframes,
+  setIdlePace,
+} from "./idle-motion";
+installIdleKeyframes();
 const keyByCode = new Map(keys.map((k) => [k.code, k]));
 // Invisible anchors for paws and tests. Memoized so a held key's auto-repeat
 // or the once-a-second state push does not re-render all 104 of them.
@@ -53,6 +60,7 @@ const initial: Snapshot = {
   speech: "",
   speechUntil: 0,
   settings: defaults,
+  covered: false,
   desktopError: "",
   inputError: "",
 };
@@ -64,8 +72,10 @@ function App() {
     [pressed, setPressed] = useState<number[]>([]),
     [size, setSize] = useState({ w: innerWidth, h: innerHeight }),
     [frenzy, setFrenzy] = useState(false),
-    stage = useRef(s.stage);
+    stage = useRef(s.stage),
+    covered = useRef(s.covered);
   stage.current = s.stage;
+  covered.current = s.covered;
   function performAction(action: string) {
     window.mengshu.interact(action as Action);
   }
@@ -98,13 +108,7 @@ function App() {
     const applyPace = () => {
       // Playback-rate updates preserve animation phase, avoiding a jump when
       // typing accelerates. No per-frame JavaScript or permanent idle timer.
-      scene.current?.querySelectorAll(".cat, .paw").forEach((el) => {
-        el.getAnimations().forEach(
-          (animation) =>
-            animation instanceof CSSAnimation &&
-            animation.updatePlaybackRate(pace),
-        );
-      });
+      if (scene.current) setIdlePace(scene.current, pace);
       scene.current?.style.setProperty(
         "--paw-move-ms",
         `${110 / Math.sqrt(pace)}ms`,
@@ -126,7 +130,8 @@ function App() {
         const now = performance.now();
         if (held.down(code, now)) {
           strokes.push(now);
-          if (Math.random() < KEY_BOUNCE_CHANCE) motion.bounce();
+          if (!covered.current && Math.random() < KEY_BOUNCE_CHANCE)
+            motion.bounce();
           // Tick at most ten times per second while typing and settling.
           if (motionTimer === undefined) {
             updatePace();
@@ -254,10 +259,13 @@ function App() {
     };
   }, []);
   const popLayer = useRef<HTMLDivElement>(null);
+  const keyPops = useRef<ReturnType<typeof createKeyPopLayer> | null>(null);
   // 键帽飘字固定开启，没有开关。
   useEffect(() => {
     if (!popLayer.current || !scene.current) return;
     const layer = createKeyPopLayer(popLayer.current, scene.current);
+    keyPops.current = layer;
+    layer.setCovered(covered.current);
     const offInput = window.mengshu.input(layer.input);
     const pet = (e: Event) => {
       const p = (e as CustomEvent<{ x: number; y: number }>).detail;
@@ -273,9 +281,11 @@ function App() {
       window.removeEventListener("key-pops-pet", pet);
       window.removeEventListener("key-pops-frenzy", frenzy);
       window.removeEventListener("reset-input", reset);
+      keyPops.current = null;
       layer.destroy();
     };
   }, []);
+  useEffect(() => keyPops.current?.setCovered(s.covered), [s.covered]);
   const layout = sceneLayout(size.w, size.h, s.stage),
     latest = (left: boolean) =>
       [...pressed]
@@ -312,11 +322,24 @@ function App() {
     };
   };
   const look = panelLook(s.panel, Date.now());
+  const panelKey = look ? `${s.panel!.mode}-${s.panel!.index}` : "";
+  const stats = useRef<HTMLElement>(null);
+  // Animated panel looks advance on a 20fps clock and freeze while covered.
+  useEffect(() => {
+    if (!look?.motion || !stats.current) return;
+    return drivePanelMotion(stats.current, () => covered.current);
+  }, [panelKey]);
+  // A paw that paused on a key resumes off the shared idle step; realign.
+  useEffect(() => {
+    if (scene.current) alignIdleMotion(scene.current);
+  }, [!!l, !!r, s.covered]);
   return (
     <>
       <div
         ref={scene}
-        className={frenzy ? "scene frenzy" : "scene"}
+        className={
+          "scene" + (frenzy ? " frenzy" : "") + (s.covered ? " covered" : "")
+        }
         style={{
           left: layout.x,
           top: layout.y,
@@ -343,7 +366,7 @@ function App() {
             alt="透视立体键盘"
             draggable={false}
           />
-          <section className="stats" aria-label="今日统计">
+          <section ref={stats} className="stats" aria-label="今日统计">
             {look ? (
               // Keyed so each new look starts its animations from the top.
               <div

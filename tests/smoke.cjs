@@ -388,6 +388,45 @@ const path = require("node:path");
       keyCount + 1
     )
       throw Error("Native key count missing");
+    // The input process asks Windows for the real modifier state (koffi). A
+    // key's own press is not "down" yet inside the hook, so press right Shift
+    // while left Shift is held: that press must report Shift down.
+    const toggleKey = (code, down) =>
+      app.evaluate(
+        (_, [code, down]) =>
+          process
+            .getBuiltinModule("module")
+            .createRequire(process.cwd() + "/package.json")("uiohook-napi")
+            .uIOhook.keyToggle(code, down),
+        [code, down],
+      );
+    await page.evaluate(() => {
+      window.__nativeKeys = [];
+      window.__offNativeKeys = window.mengshu.input((e) =>
+        window.__nativeKeys.push(e),
+      );
+    });
+    await toggleKey(42, "down");
+    try {
+      await page.waitForTimeout(80);
+      await toggleKey(54, "down");
+      await page.waitForTimeout(80);
+    } finally {
+      await toggleKey(54, "up");
+      await toggleKey(42, "up");
+    }
+    await page.waitForTimeout(150);
+    const rightShift = await page.evaluate(() => {
+      window.__offNativeKeys();
+      return window.__nativeKeys.find(
+        (e) => e.type === "keydown" && e.keycode === 54,
+      );
+    });
+    if (!rightShift || !(rightShift.mods & 8))
+      throw Error(
+        "Native key presses must carry the real modifier state: " +
+          JSON.stringify(rightShift),
+      );
     const catClickWithRandom = async (roll) => {
       await app.evaluate((_, roll) => {
         globalThis.__originalRandom = Math.random;
@@ -698,6 +737,132 @@ const path = require("node:path");
     await page.waitForSelector(".rest-speech");
     await panelShown("rest-0");
     await click(".rest-dismiss");
+    await panelShown("normal");
+    // Idle sway steps on one shared 100ms grid: the cat and both paws change
+    // together about ten times a second, even after paws paused on keys.
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(".cat")
+          .getAnimations()
+          .every((a) => a.playbackRate === 1),
+      null,
+      { timeout: 8000 },
+    );
+    await page.waitForTimeout(400);
+    const idleFrames = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const els = [...document.querySelectorAll(".cat, .paw")];
+          const pose = () =>
+            els
+              .map((el) => {
+                const s = getComputedStyle(el);
+                return s.translate + "|" + s.rotate;
+              })
+              .join(";");
+          let last = pose(),
+            changed = 0,
+            frames = 0;
+          const t0 = performance.now();
+          const frame = () => {
+            frames++;
+            const p = pose();
+            if (p !== last) changed++;
+            last = p;
+            if (performance.now() - t0 < 2000) requestAnimationFrame(frame);
+            else resolve({ changed, frames });
+          };
+          requestAnimationFrame(frame);
+        }),
+    );
+    console.log("idle frames in 2s", idleFrames);
+    if (!(idleFrames.changed >= 8 && idleFrames.changed <= 24))
+      throw Error("Idle sway must step together about ten times a second");
+    const panelSteps = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const a = document
+              .querySelector(".stats")
+              .getAnimations({ subtree: true })[0];
+            const seen = new Set();
+            const t0 = performance.now();
+            const frame = () => {
+              seen.add(a.currentTime);
+              if (performance.now() - t0 < 1000) requestAnimationFrame(frame);
+              else resolve(seen.size);
+            };
+            requestAnimationFrame(frame);
+          }),
+      );
+    const coveredChecks = async () => {
+      const panelFps = await panelSteps();
+      console.log("panel steps in 1s", panelFps);
+      if (!(panelFps >= 12 && panelFps <= 24))
+        throw Error("Panel looks must advance about twenty times a second");
+      // Behind other windows nothing idles; only shortcut pops still answer.
+      await previewPanel("debug-covered");
+      await page.waitForSelector(".scene.covered");
+      if ((await idlePose()).some((pose) => pose.state !== "paused"))
+        throw Error("A covered scene must hold the idle sway");
+      if ((await panelSteps()) !== 1)
+        throw Error("A covered scene must freeze the panel look");
+      const popsBefore = await page.locator(".key-pop").count();
+      await send({ type: "keydown", keycode: 30, mods: 0 });
+      await send({ type: "keyup", keycode: 30 });
+      await page.waitForTimeout(100);
+      if ((await page.locator(".key-pop").count()) !== popsBefore)
+        throw Error("A covered scene must skip plain key pops");
+      await send({ type: "keydown", keycode: 3675, mods: 4 });
+      await send({ type: "keydown", keycode: 32, mods: 4 });
+      await send({ type: "keyup", keycode: 32 });
+      await send({ type: "keyup", keycode: 3675 });
+      await page.waitForTimeout(100);
+      if (
+        (await page.locator(".key-pop.shortcut").last().textContent()) !==
+        "回桌面看懵薯！"
+      )
+        throw Error("Win+D must still answer while covered");
+      await previewPanel("debug-uncovered");
+      await page.waitForFunction(
+        () => !document.querySelector(".scene.covered"),
+      );
+      if ((await idlePose()).some((pose) => pose.state !== "running"))
+        throw Error("An uncovered scene must resume the idle sway");
+      if ((await panelSteps()) < 12)
+        throw Error("An uncovered scene must resume the panel look");
+      // Alt held past the stale-key sweep: Windows still reports it down.
+      await send({ type: "keydown", keycode: 15, mods: 2 });
+      await send({ type: "keyup", keycode: 15 });
+      await page.waitForTimeout(80);
+      const altTab = await page.locator(".key-pop").last().textContent();
+      if (!["切换！", "溜号~", "换个窗口"].includes(altTab))
+        throw Error("Alt+Tab must follow the real Alt state: " + altTab);
+    };
+    // Every panel look runs on the 20fps clock (script-paused animations).
+    // Thirty of each keeps the preview order where PANEL_SHOTS expects it.
+    for (let i = 0; i < 60; i++) {
+      await previewPanel(i < 30 ? "debug-panel" : "debug-rest");
+      await page.waitForTimeout(120);
+      const states = await page.evaluate(() =>
+        document
+          .querySelector(".stats")
+          .getAnimations({ subtree: true })
+          .map((a) => a.playState),
+      );
+      if (states.some((state) => state !== "paused"))
+        throw Error(
+          "Panel look must use the 20fps clock: " +
+            (await page.locator(".stats-display").getAttribute("data-panel")),
+        );
+      if (i === 0) {
+        await panelShown("fun-2");
+        await coveredChecks();
+      }
+    }
+    await page.evaluate(() => window.mengshu.interact("dismiss"));
+    await previewPanel("debug-panel-off");
     await panelShown("normal");
     if (process.env.PANEL_SHOTS) {
       const fs = require("node:fs");

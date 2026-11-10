@@ -30,7 +30,9 @@ body {
   height: 760px;
   object-fit: contain;
   filter: drop-shadow(0 9px 10px #00000016);
-  animation: cat-breathe 6.8s ease-in-out infinite;
+  /* Keyframes come from idle-motion.ts: sampled every 100ms, one value per
+     step, so the idle sway costs ten frames a second instead of sixty. */
+  animation: cat-breathe 6.8s steps(1, jump-end) infinite;
 }
 .desk-shadow {
   position: absolute;
@@ -67,44 +69,35 @@ body {
     transform var(--paw-move-ms, 110ms) ease-out;
   filter: drop-shadow(0 5px 3px #1b25182b);
   mask-image: linear-gradient(transparent 0%, #000 24%);
-  animation: paw-idle 5.8s ease-in-out infinite;
+  animation: paw-idle 5.8s steps(1, jump-end) infinite;
 }
 .paw:not(.right) {
   filter: brightness(0.84) saturate(0.86) drop-shadow(0 5px 3px #1b25182b);
 }
 .paw.right {
   width: 143.75px;
+  /* Durations and delay stay whole multiples of the 100ms idle step. */
+  animation-name: paw-idle-right;
   animation-duration: 6.6s;
   animation-delay: -2.1s;
 }
 .paw.is-active {
   animation-play-state: paused;
 }
-/* Independent transform properties keep idle motion separate from key poses.
-   The cat moves as a single photo; its face is never stretched or morphed. */
-@keyframes cat-breathe {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -4px;
-  }
-}
-@keyframes paw-idle {
-  0%,
-  100% {
-    translate: 0 0;
-    rotate: -0.5deg;
-  }
-  50% {
-    translate: 1.2px -2.8px;
-    rotate: 0.6deg;
-  }
+/* Independent transform properties (translate/rotate) keep idle motion
+   separate from key poses. The cat moves as a single photo; its face is never
+   stretched or morphed. */
+/* Hidden behind other windows: hold the sway, and let paws jump straight to
+   their keys, so nothing is drawn for nobody. */
+.scene.covered .cat,
+.scene.covered .paw {
+  animation-play-state: paused;
+  transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .cat,
-  .paw {
+  .paw,
+  .paw.right {
     animation: none;
   }
   .paw {

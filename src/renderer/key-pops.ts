@@ -7,6 +7,7 @@ import { KeyPops } from "../shared/key-pops";
 import type { Input } from "../shared/types";
 import { HeldKeys } from "../shared/held-keys";
 import { FRENZY_MS } from "../shared/click-frenzy";
+import { withModifiers } from "../shared/modifiers";
 
 const MAX_POPS = 60;
 const PLAIN_GAP_MS = 35;
@@ -37,6 +38,9 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
   let lastPlain = 0;
   // While the keyboard is kicked away, key pops would float over empty desk.
   let quietUntil = 0;
+  // Other windows hide the scene: nobody sees the pops, so skip the animation
+  // work, except shortcut lines (Win+D reveals the desktop right away).
+  let covered = false;
 
   const centre = (code: number) => {
     const key = keys.find((k) => k.code === code);
@@ -84,9 +88,9 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
         held.down(e.keycode, now);
         return;
       }
-      const pop = pops.press(e.keycode, held);
+      const pop = pops.press(e.keycode, withModifiers(held, e.mods));
       held.down(e.keycode, now);
-      if (now < quietUntil) return;
+      if (now < quietUntil || (covered && pop.kind !== "shortcut")) return;
       if (pop.kind === "plain") {
         if (now - lastPlain < PLAIN_GAP_MS) return;
         lastPlain = now;
@@ -115,6 +119,9 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
           y,
           1000,
         );
+    },
+    setCovered(value: boolean) {
+      covered = value;
     },
     /** Frenzy: the keyboard is away, so keycap pops pause meanwhile. */
     frenzy() {

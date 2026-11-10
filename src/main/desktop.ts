@@ -44,9 +44,15 @@ const open = k.func("void * __stdcall OpenProcess(uint32_t, bool, uint32_t)"),
     "bool __stdcall WriteProcessMemory(void *, void *, void *, size_t, void *)",
   ),
   close = k.func("bool __stdcall CloseHandle(void *)");
+// Never a plain SendMessageW to Explorer: if it hangs, so would our main
+// process (timers, saving, the tray). Abort when hung, give up after 200ms.
 const message = fn(
-  "intptr_t __stdcall SendMessageW(void *, uint32_t, uintptr_t, void *)",
+  "intptr_t __stdcall SendMessageTimeoutW(void *, uint32_t, uintptr_t, void *, uint32_t, uint32_t, _Out_ intptr_t *)",
 );
+const SMTO_ABORTIFHUNG = 0x0002;
+const ancestor = fn("void * __stdcall GetAncestor(void *, uint32_t)");
+const GA_ROOT = 2;
+const desktopRoots = ["Progman", "WorkerW"];
 const className = (h: any) => {
   const b = Buffer.alloc(512);
   cls(h, b, 256);
@@ -135,11 +141,34 @@ export class Desktop {
       b.writeInt32LE(p.x);
       b.writeInt32LE(p.y, 4);
       if (!write(process, remote, b, 24, null)) return false;
-      return Number(message(h, 0x1012, 0, remote)) < 0;
+      const item = [0];
+      // LVM_HITTEST: -1 means the click missed every icon.
+      if (!message(h, 0x1012, 0, remote, SMTO_ABORTIFHUNG, 200, item))
+        return false;
+      return Number(item[0]) < 0;
     } finally {
       if (remote) free(process, remote, 0, 0x8000);
       close(process);
     }
+  }
+  /**
+   * True when other programs' windows hide the whole scene (`r`, physical
+   * pixels), so nobody can see it animate. Each sample point is hit-tested
+   * like a click: the desktop, its icons and our own window all have the
+   * desktop (Progman/WorkerW) as their root. Cross-process windows are not
+   * sent messages, so a hung program cannot stall this.
+   */
+  covered(r: Electron.Rectangle) {
+    for (const fy of [0.08, 0.3, 0.5, 0.7, 0.94])
+      for (const fx of [0.07, 0.24, 0.4, 0.56, 0.71]) {
+        const h = atPoint({
+          x: Math.round(r.x + r.width * fx),
+          y: Math.round(r.y + r.height * fy),
+        });
+        if (!h || desktopRoots.includes(className(ancestor(h, GA_ROOT) || h)))
+          return false;
+      }
+    return true;
   }
 }
 export function sceneBounds(settings: {

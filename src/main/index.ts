@@ -63,10 +63,15 @@ let settings = { ...defaults },
   quitting = false,
   ready = false;
 let storePath = "",
-  logPath = "";
+  logPath = "",
+  lastSaved = "";
 let speechTimer: ReturnType<typeof setTimeout> | undefined;
 let tray: Tray | undefined;
 let rendererCrashes: number[] = [];
+const smoke = process.argv.includes("--smoke");
+// Whether other windows hide the whole scene; smoke can force it either way.
+let covered = false,
+  debugCovered: boolean | null = null;
 // Smoke-only preview support; no debug controls appear in the tray.
 const debugNext = { fun: 0, rest: 0 };
 function debugPanel(mode: "fun" | "rest") {
@@ -125,6 +130,16 @@ const log = (s: string) => {
   lastLog = s;
   repeatedLogs = 0;
 };
+// Electron's default for an uncaught main-process error is a modal error box
+// on top of the user's work; a desktop pet logs it and keeps going instead.
+process.on("uncaughtException", (e) => {
+  console.error(e);
+  log("uncaught " + (e?.stack ?? e));
+});
+process.on("unhandledRejection", (e) => {
+  console.error(e);
+  log("unhandled rejection " + ((e as Error)?.stack ?? e));
+});
 const send = (channel: string, data?: unknown) => {
   if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
     win.webContents.send(channel, data);
@@ -155,21 +170,37 @@ const state = (): Snapshot => ({
   speech,
   speechUntil,
   settings,
+  covered,
   desktopError,
   inputError,
 });
+function updateCovered() {
+  let next = false;
+  if (smoke) next = debugCovered ?? false;
+  else if (ready && settings.visible && !desktopError && !win.isDestroyed())
+    try {
+      next =
+        locked ||
+        desktop.covered(screen.dipToScreenRect(null, sceneBounds(settings)));
+    } catch (e) {
+      log("covered check failed " + String(e));
+    }
+  covered = next;
+}
 function publish() {
   if (engine.reminderUntil > Date.now()) clearSpeech();
   send("state", state());
 }
 function save() {
+  const data = JSON.stringify({ settings, daily: engine.daily });
+  // Nothing new (idle, away, paused): skip the write instead of touching the
+  // disk every five seconds all day.
+  if (data === lastSaved) return;
   // Runs on a timer: a full disk or an antivirus lock must not throw out of it.
   try {
-    writeFileSync(
-      storePath + ".tmp",
-      JSON.stringify({ settings, daily: engine.daily }),
-    );
+    writeFileSync(storePath + ".tmp", data);
     renameSync(storePath + ".tmp", storePath);
+    lastSaved = data;
   } catch (e) {
     log("save failed " + String(e));
   }
@@ -181,12 +212,15 @@ function load(w: BrowserWindow, query?: string) {
     if (!target.startsWith("file:") && !(url && target.startsWith(url)))
       event.preventDefault();
   });
-  if (url) void w.loadURL(url + (query ? "?" + query : ""));
+  // A reload or crash can abort a load; record it rather than leave an
+  // unhandled rejection behind.
+  const failed = (e: unknown) => log("load failed " + String(e));
+  if (url) w.loadURL(url + (query ? "?" + query : "")).catch(failed);
   else
-    void w.loadFile(
+    w.loadFile(
       join(__dirname, "../renderer/index.html"),
       query ? { query: { view: query } } : undefined,
-    );
+    ).catch(failed);
 }
 function createScene() {
   win = new BrowserWindow({
@@ -244,6 +278,9 @@ function attach() {
     win.hide();
     desktop.detach(win);
     win.setBounds(stageBounds(settings));
+    // Show before re-parenting: Electron re-applies its stored screen bounds
+    // on show, which a child window would read as WorkerW client coordinates
+    // (it lands a whole monitor away). attach() then has the final word.
     if (settings.visible) win.showInactive();
     desktop.attach(win, stageBounds(settings));
     win.setSkipTaskbar(true);
@@ -264,6 +301,7 @@ function attach() {
   publish();
 }
 function update(p: Partial<Settings>) {
+  if (!p || typeof p !== "object") return;
   const n = { ...settings };
   for (const key of ["visible", "paused", "autoStart"] as const)
     if (typeof p[key] === "boolean") n[key] = p[key]!;
@@ -308,8 +346,10 @@ function clearSpeech() {
 }
 // No bubble at all while the cat is in a frenzy.
 let frenzyUntil = 0;
+/** Shows a bubble; false when the rest reminder or a frenzy turns it away. */
 function say(text: string, duration = PET_SPEECH_MS) {
-  if (engine.reminderUntil > Date.now() || frenzyUntil > Date.now()) return;
+  if (engine.reminderUntil > Date.now() || frenzyUntil > Date.now())
+    return false;
   speech = text;
   speechUntil = Date.now() + duration;
   clearTimeout(speechTimer);
@@ -317,6 +357,7 @@ function say(text: string, duration = PET_SPEECH_MS) {
     clearSpeech();
     publish();
   }, duration);
+  return true;
 }
 let lastFastLine = "";
 function interact(action: string) {
@@ -346,8 +387,18 @@ function interact(action: string) {
   } else if (action === "pet") {
     // The sound belongs to a newly accepted bubble, not to every mouse click.
     if (speechUntil > Date.now() || engine.reminderUntil > Date.now()) return;
-    say(petLines[Math.floor(Math.random() * petLines.length)]);
-    if (Math.random() < 0.22 && settings.visible) send("meow");
+    if (
+      say(petLines[Math.floor(Math.random() * petLines.length)]) &&
+      Math.random() < 0.22 &&
+      settings.visible
+    )
+      send("meow");
+  } else if (
+    smoke &&
+    (action === "debug-covered" || action === "debug-uncovered")
+  ) {
+    debugCovered = action === "debug-covered";
+    updateCovered();
   }
   publish();
 }
@@ -389,10 +440,14 @@ function startInput() {
       const burst = engine.input(e, performance.now(), Date.now());
       if (burst && settings.visible && frenzyUntil <= Date.now()) {
         const choices = fastTypingLines.filter((line) => line !== lastFastLine);
-        lastFastLine = choices[Math.floor(Math.random() * choices.length)];
-        say(lastFastLine, 4500);
-        send("meow");
-        publish();
+        const line = choices[Math.floor(Math.random() * choices.length)];
+        // The meow goes with the bubble: none while the rest reminder holds
+        // the floor (it stays quiet until "我知道了").
+        if (say(line, 4500)) {
+          lastFastLine = line;
+          send("meow");
+          publish();
+        }
       }
       // The scene only animates keys; movement/wheel/buttons stay in main.
       if (e.type === "keydown" || e.type === "keyup") send("input", e);
@@ -404,7 +459,16 @@ function startInput() {
       !win.isDestroyed()
     ) {
       try {
-        if (desktop.desktopPoint(e.x!, e.y!)) {
+        // Only clicks on the scene can reach the cat or the reminder button;
+        // skip the cross-process icon hit test for the rest of the desktop.
+        const scene = screen.dipToScreenRect(null, sceneBounds(settings));
+        if (
+          e.x! >= scene.x &&
+          e.y! >= scene.y &&
+          e.x! < scene.x + scene.width &&
+          e.y! < scene.y + scene.height &&
+          desktop.desktopPoint(e.x!, e.y!)
+        ) {
           const b = desktop.bounds(win),
             factor = win.webContents.getZoomFactor();
           const d = screen.getDisplayMatching(sceneBounds(settings));
@@ -480,8 +544,13 @@ else {
       });
     setInterval(() => {
       engine.tick(performance.now(), Date.now());
+      updateCovered();
       publish();
     }, 1000);
+    // GPU or utility crashes otherwise leave no trace in diagnostics.log.
+    app.on("child-process-gone", (_e, details) =>
+      log("child process gone " + JSON.stringify(details)),
+    );
     setInterval(save, 5000);
     setInterval(() => {
       if (ready && settings.visible && (win.isDestroyed() || !desktop.alive()))

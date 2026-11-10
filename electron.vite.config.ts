@@ -14,5 +14,6 @@ export default defineConfig({
     },
   },
   preload: { plugins: [externalizeDepsPlugin()] },
-  renderer: { plugins: [react()] },
+  // The renderer ships as one bundle; minified it parses faster at startup.
+  renderer: { plugins: [react()], build: { minify: true } },
 });
