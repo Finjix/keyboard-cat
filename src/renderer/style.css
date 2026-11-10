@@ -116,6 +116,11 @@ body {
 }
 .stats-display {
   position: relative;
+  /* Fixed size: every special look keeps exactly the normal two-row height. */
+  box-sizing: border-box;
+  height: 53px;
+  display: flex;
+  flex-direction: column;
   padding: 4px 8px;
   border-radius: 7px;
   background: linear-gradient(155deg, #e5e9cf, #d5ddba);
@@ -131,7 +136,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 4px 0;
+  flex: 1 1 0;
+  min-height: 0;
 }
 .metric > span {
   font-size: 9px;

@@ -20,11 +20,23 @@ import {
 } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { Engine } from "./engine";
-import { petLines, PET_SPEECH_MS, STARTUP_SPEECH } from "./pet-lines";
+import {
+  petLines,
+  PET_SPEECH_MS,
+  STARTUP_SPEECH,
+  STARTUP_SPEECH_MS,
+} from "./pet-lines";
 import { FRENZY_MS } from "../shared/click-frenzy";
 import { fastTypingLines } from "./typing-burst";
 import { Desktop, sceneBounds, stageBounds } from "./desktop";
-import { defaults, Settings, Snapshot, Input, Stage } from "../shared/types";
+import {
+  defaults,
+  Settings,
+  Snapshot,
+  Input,
+  Stage,
+  PANEL_EFFECT_COUNT,
+} from "../shared/types";
 app.setName("懵薯");
 app.setAppUserModelId("cn.mengshu.desktop");
 app.setPath(
@@ -55,6 +67,16 @@ let storePath = "",
 let speechTimer: ReturnType<typeof setTimeout> | undefined;
 let tray: Tray | undefined;
 let rendererCrashes: number[] = [];
+// Tray debug walks the looks in order so every one can be checked by hand.
+const debugNext = { fun: 0, rest: 0 };
+function debugPanel(mode: "fun" | "rest") {
+  const index = debugNext[mode];
+  debugNext[mode] = (index + 1) % PANEL_EFFECT_COUNT;
+  if (mode === "rest") engine.remind(Date.now(), index);
+  else engine.showPanel("fun", Date.now(), index);
+  publish();
+  refreshTrayMenu();
+}
 function refreshTrayMenu() {
   tray?.setContextMenu(
     Menu.buildFromTemplate([
@@ -65,6 +87,31 @@ function refreshTrayMenu() {
         checked: settings.autoStart,
         click: () => update({ autoStart: !settings.autoStart }),
       },
+      {
+        id: "debug",
+        label: "调试",
+        submenu: [
+          {
+            id: "debug-panel",
+            label: `面板特效（下一个 ${debugNext.fun + 1}/${PANEL_EFFECT_COUNT}）`,
+            click: () => debugPanel("fun"),
+          },
+          {
+            id: "debug-rest",
+            label: `工作满 1 小时（休息特效 ${debugNext.rest + 1}/${PANEL_EFFECT_COUNT}）`,
+            click: () => debugPanel("rest"),
+          },
+          {
+            id: "debug-panel-off",
+            label: "面板恢复正常",
+            click: () => {
+              engine.panel = null;
+              publish();
+            },
+          },
+        ],
+      },
+      { type: "separator" },
       { id: "quit", label: "退出", click: () => app.quit() },
     ]),
   );
@@ -129,6 +176,7 @@ const state = (): Snapshot => ({
   continuousMs: engine.continuousMs,
   reminderUntil: engine.reminderUntil,
   reminderText: engine.reminderText,
+  panel: engine.panel,
   speech,
   speechUntil,
   settings,
@@ -184,7 +232,7 @@ function createScene() {
   });
   win.setIgnoreMouseEvents(true);
   win.webContents.on("did-finish-load", () => {
-    if (!ready) say(STARTUP_SPEECH);
+    if (!ready) say(STARTUP_SPEECH, STARTUP_SPEECH_MS);
     ready = true;
     attach();
   });
@@ -299,7 +347,7 @@ let lastFastLine = "";
 function interact(action: string) {
   if (action === "dismiss") {
     const acknowledged = engine.reminderUntil > Date.now();
-    engine.reminderUntil = 0;
+    engine.dismiss();
     publish();
     if (acknowledged && settings.visible) send("meow");
     return;

@@ -22,12 +22,21 @@ export interface Daily {
   clicks: number;
   workMs: number;
 }
+/** Panel takeover: a fun look every 20 working minutes, a rest look at the hour. */
+export type PanelMode = "fun" | "rest";
+export const PANEL_EFFECT_COUNT = 30;
+export interface PanelEffect {
+  mode: PanelMode;
+  index: number;
+  until: number;
+}
 export interface Snapshot {
   stage: Stage | null;
   daily: Daily;
   continuousMs: number;
   reminderUntil: number;
   reminderText: string;
+  panel: PanelEffect | null;
   speech: string;
   speechUntil: number;
   settings: Settings;

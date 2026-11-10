@@ -34,8 +34,7 @@
   color: #ee7d3f;
 }
 .key-pop.shortcut,
-.key-pop.word,
-.key-pop.milestone {
+.key-pop.word {
   padding: 5px 11px;
   border-radius: 12px;
   border: 2px solid #2d2a24;
@@ -52,11 +51,6 @@
   font-size: 22px;
   color: #6a3b12;
   background: #ffe39a;
-}
-.key-pop.milestone {
-  font-size: 22px;
-  color: #fff;
-  background: #e8885a;
 }
 .key-pop.heart {
   font-size: 22px;

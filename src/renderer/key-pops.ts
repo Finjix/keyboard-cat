@@ -15,7 +15,6 @@ const LIFE = {
   special: 1100,
   shortcut: 1300,
   word: 1700,
-  milestone: 1900,
 };
 const COLORS = [
   "#e8885a",

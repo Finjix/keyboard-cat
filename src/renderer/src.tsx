@@ -14,6 +14,8 @@ import "./style.css";
 import { createMeowPlayer } from "./meow";
 import { createKeyPopLayer } from "./key-pops";
 import "./key-pops.css";
+import { panelLook } from "./panel-effects";
+import "./panel-effects.css";
 import { HeldKeys } from "../shared/held-keys";
 import { ClickFrenzy, FRENZY_MS } from "../shared/click-frenzy";
 import { createCatMotion, KEY_BOUNCE_CHANCE } from "./cat-motion";
@@ -47,6 +49,7 @@ const initial: Snapshot = {
   continuousMs: 0,
   reminderUntil: 0,
   reminderText: "",
+  panel: null,
   speech: "",
   speechUntil: 0,
   settings: defaults,
@@ -308,6 +311,7 @@ function App() {
       transform: `translate(-50%,-97%) rotate(${((right ? -5 : 5) + reach).toFixed(2)}deg) scale(${k ? 0.96 : 1})`,
     };
   };
+  const look = panelLook(s.panel, Date.now());
   return (
     <>
       <div
@@ -340,16 +344,33 @@ function App() {
             draggable={false}
           />
           <section className="stats" aria-label="今日统计">
-            <div className="stats-display">
-              <div className="metric">
-                <span>敲薯</span>
-                <strong>{s.daily.keys.toLocaleString()} 次</strong>
+            {look ? (
+              // Keyed so each new look starts its animations from the top.
+              <div
+                key={`${s.panel!.mode}-${s.panel!.index}`}
+                className={"stats-display fx " + (look.className ?? "")}
+                data-panel={`${s.panel!.mode}-${s.panel!.index}`}
+              >
+                {look.render({
+                  keys: s.daily.keys,
+                  workMs: s.daily.workMs,
+                  continuousMs: s.continuousMs,
+                  until: s.panel!.until,
+                  now: Date.now(),
+                })}
               </div>
-              <div className="metric">
-                <span>今日工作</span>
-                <strong>{duration(s.daily.workMs)}</strong>
+            ) : (
+              <div className="stats-display" data-panel="normal">
+                <div className="metric">
+                  <span>敲薯</span>
+                  <strong>{s.daily.keys.toLocaleString()} 次</strong>
+                </div>
+                <div className="metric">
+                  <span>今日工作</span>
+                  <strong>{duration(s.daily.workMs)}</strong>
+                </div>
               </div>
-            </div>
+            )}
             {(s.desktopError || s.inputError) && (
               <aside>{s.desktopError || s.inputError}</aside>
             )}

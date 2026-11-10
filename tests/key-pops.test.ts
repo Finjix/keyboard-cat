@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { keys } from "../src/shared/keyboard";
-import { KeyPops, MILESTONE, secretWords } from "../src/shared/key-pops";
+import { KeyPops, popTexts, secretWords } from "../src/shared/key-pops";
 
 const code = (label: string) => keys.find((k) => k.label === label)!.code;
 const none = new Set<number>();
@@ -34,13 +34,13 @@ describe("键帽飘字", () => {
     expect(type(pops, "xiaban").text).toBe(secretWords.xiaban[0]);
     expect(pops.press(code("U"), none).kind).toBe("plain");
   });
-  it("celebrates every few hundred presses", () => {
+  it("offers exactly 365 distinct keycap lines", () => {
+    expect(popTexts.size).toBe(365);
+    expect([...popTexts].every((t) => t.trim().length > 0)).toBe(true);
+  });
+  it("never celebrates press counts", () => {
     const pops = new KeyPops(() => 0);
-    let last;
-    for (let i = 0; i < MILESTONE; i++) last = pops.press(code("K"), none);
-    expect(last).toEqual({
-      text: `本次第 ${MILESTONE} 敲！`,
-      kind: "milestone",
-    });
+    for (let i = 0; i < 1000; i++)
+      expect(pops.press(code("K"), none).kind).toBe("plain");
   });
 });

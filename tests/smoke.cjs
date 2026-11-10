@@ -31,15 +31,15 @@ const path = require("node:path");
     console.log("state", state);
     if (state.desktopError || state.inputError)
       throw Error("Native startup failed");
-    const greeting = "人好喵~我素懵薯！我树薯薯养的键盘喵喵。";
+    const greeting = "酥饼好喵！我素薯薯养的键盘猫~";
     if (
       state.speech !== greeting ||
       (await page.locator(".pet-speech").textContent()) !== greeting
     )
       throw Error("Startup must show the exact welcome message");
     const greetingRemaining = state.speechUntil - Date.now();
-    if (greetingRemaining < 1500 || greetingRemaining > 3000)
-      throw Error("Startup welcome must use a three-second timer");
+    if (greetingRemaining < 8500 || greetingRemaining > 10000)
+      throw Error("Startup welcome must use a ten-second timer");
     await page.evaluate(() => {
       window.mengshu.interact("pet");
       window.mengshu.interact("pet");
@@ -53,7 +53,7 @@ const path = require("node:path");
       greetingAfterClicks.speechUntil !== state.speechUntil
     )
       throw Error(
-        "Cat clicks must not replace or extend the three-second welcome",
+        "Cat clicks must not replace or extend the ten-second welcome",
       );
     await page.screenshot({
       path: "docs/startup-preview.png",
@@ -591,7 +591,7 @@ const path = require("node:path");
     if (
       !trayState.alive ||
       trayState.bounds.width <= 0 ||
-      trayState.labels.join(",") !== "开机自启,退出"
+      trayState.labels.join(",") !== "开机自启,调试,,退出"
     )
       throw Error("Native tray icon and settings menu must be available");
     const trayClick = (id) =>
@@ -673,6 +673,71 @@ const path = require("node:path");
       meowsBeforeReminder + 1
     )
       throw Error("Repeated acknowledgement must not play another meow");
+    // 托盘「调试」：按顺序切换面板造型，休息造型随休息提醒一起出现。
+    const panelShown = (id) =>
+      page.waitForSelector(`.stats-display[data-panel="${id}"]`, {
+        timeout: 2000,
+      });
+    const trayLabel = (id) =>
+      app.evaluate(
+        (_, id) => globalThis.__trayMenu.getMenuItemById(id).label,
+        id,
+      );
+    if ((await page.locator('.stats-display[data-panel="normal"]').count()) !== 1)
+      throw Error("Stats panel must start in its normal look");
+    await trayClick("debug-panel");
+    await panelShown("fun-0");
+    const panelState = await page.evaluate(() => window.mengshu.snapshot());
+    const panelRemaining = panelState.panel.until - Date.now();
+    if (panelRemaining < 595000 || panelRemaining > 600000)
+      throw Error("A panel look must last ten minutes");
+    if (panelState.reminderUntil)
+      throw Error("A fun panel look must not raise the rest reminder");
+    await trayClick("debug-panel");
+    await panelShown("fun-1");
+    if (!(await trayLabel("debug-panel")).includes("3/30"))
+      throw Error("Tray debug label must show the next panel look");
+    await trayClick("debug-panel-off");
+    await panelShown("normal");
+    await trayClick("debug-rest");
+    await page.waitForSelector(".rest-speech");
+    await panelShown("rest-0");
+    await click(".rest-dismiss");
+    await panelShown("normal");
+    if (process.env.PANEL_SHOTS) {
+      const fs = require("node:fs");
+      fs.mkdirSync(process.env.PANEL_SHOTS, { recursive: true });
+      const statsClip = () =>
+        page.evaluate(() => {
+          const r = document.querySelector(".stats").getBoundingClientRect();
+          return { x: r.x - 6, y: r.y - 6, width: r.width + 12, height: r.height + 12 };
+        });
+      console.log(
+        "panel-normal",
+        await page.evaluate(() => {
+          const el = document.querySelector(".stats-display");
+          return [el.offsetHeight, ...[...el.querySelectorAll(".metric")].map((m) => m.getBoundingClientRect().height)].join(" ");
+        }),
+      );
+      for (const mode of ["fun", "rest"])
+        for (let i = mode === "fun" ? 2 : 1; i <= 30; i++) {
+          const want = `${mode}-${i % 30}`;
+          await trayClick(mode === "fun" ? "debug-panel" : "debug-rest");
+          await panelShown(want);
+          await page.waitForTimeout(700);
+          const [running, height] = await page.evaluate(() => {
+            const el = document.querySelector(".stats-display");
+            return [el.getAnimations({ subtree: true }).length, el.offsetHeight];
+          });
+          console.log("panel-anim", want, running, height);
+          await page.screenshot({
+            path: path.join(process.env.PANEL_SHOTS, `${want}.png`),
+            clip: await statsClip(),
+          });
+        }
+      await page.evaluate(() => window.mengshu.interact("dismiss"));
+      await trayClick("debug-panel-off");
+    }
     const original = (await page.evaluate(() => window.mengshu.snapshot()))
       .settings.autoStart;
     for (const expected of [!original, original]) {
