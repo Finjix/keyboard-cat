@@ -514,6 +514,17 @@ const path = require("node:path");
     const homeCat = await page.locator(".cat").boundingBox();
     const homeWindow = await page.evaluate(() => [innerWidth, innerHeight]);
     const frenzyEvents = await page.evaluate(() => window.__meowEvents);
+    // Every clip started from now on: which buffer, and whether it ended.
+    await page.evaluate(() => {
+      window.__clips = [];
+      const start = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...args) {
+        const clip = { buffer: this.buffer, at: performance.now(), ended: 0 };
+        window.__clips.push(clip);
+        this.addEventListener("ended", () => (clip.ended = performance.now()));
+        return start.apply(this, args);
+      };
+    });
     // Record the scene's on-screen scale every frame: any frame where it
     // changes is a visible flash while the window grows or shrinks.
     await page.evaluate(() => {
@@ -585,6 +596,27 @@ const path = require("node:path");
       Math.abs(backCat.width - homeCat.width) > 1
     )
       throw Error("The cat must land exactly where it started");
+    // The cat yowls the whole frenzy, clip after clip, each one different,
+    // and falls quiet when everything has landed.
+    const yowls = await page.evaluate(() => {
+      const clips = window.__clips;
+      return {
+        count: clips.length,
+        distinct: new Set(clips.map((c) => c.buffer)).size,
+        playing: clips.filter((c) => !c.ended).length,
+        overlap: clips.some(
+          (c, i) => i > 0 && clips[i - 1].ended > c.at + 1,
+        ),
+      };
+    });
+    console.log("frenzy yowls", yowls);
+    if (yowls.count < 2 || yowls.distinct !== yowls.count)
+      throw Error("A frenzy must keep yowling with different sounds");
+    if (yowls.overlap) throw Error("Frenzy yowls must not overlap");
+    if (yowls.playing) throw Error("Yowling must stop when the frenzy ends");
+    await page.waitForTimeout(800);
+    if ((await page.evaluate(() => window.__clips.length)) !== yowls.count)
+      throw Error("No yowl may start after the frenzy ends");
     // A fresh key press bounces the cat with a 2.2% chance.
     const keyBounce = async (roll, keycode) => {
       await page.evaluate((roll) => {
@@ -740,6 +772,8 @@ const path = require("node:path");
     await panelShown("normal");
     // Idle sway steps on one shared 100ms grid: the cat and both paws change
     // together about ten times a second, even after paws paused on keys.
+    // Real typing on the test machine would speed the sway up: shut it out.
+    await page.evaluate(() => window.mengshu.update({ paused: true }));
     await page.waitForFunction(
       () =>
         document
@@ -818,12 +852,18 @@ const path = require("node:path");
       await send({ type: "keydown", keycode: 32, mods: 4 });
       await send({ type: "keyup", keycode: 32 });
       await send({ type: "keyup", keycode: 3675 });
-      await page.waitForTimeout(100);
-      if (
-        (await page.locator(".key-pop.shortcut").last().textContent()) !==
-        "回桌面看懵薯！"
-      )
-        throw Error("Win+D must still answer while covered");
+      await page
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll(".key-pop.shortcut")].some(
+              (el) => el.textContent === "回桌面看懵薯！",
+            ),
+          null,
+          { timeout: 1000, polling: 16 },
+        )
+        .catch(() => {
+          throw Error("Win+D must still answer while covered");
+        });
       await previewPanel("debug-uncovered");
       await page.waitForFunction(
         () => !document.querySelector(".scene.covered"),
@@ -862,6 +902,7 @@ const path = require("node:path");
       }
     }
     await page.evaluate(() => window.mengshu.interact("dismiss"));
+    await page.evaluate(() => window.mengshu.update({ paused: false }));
     await previewPanel("debug-panel-off");
     await panelShown("normal");
     if (process.env.PANEL_SHOTS) {

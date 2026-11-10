@@ -172,9 +172,14 @@ function App() {
       const started = performance.now();
       setFrenzy(true);
       window.dispatchEvent(new Event("key-pops-frenzy"));
+      // Yowl the whole time, a different sound each time, until it is over.
+      // Main's single frenzy meow then finds a clip already playing.
+      meow.frenzy(FRENZY_MS);
       performAction("frenzy");
       const done = () => {
-        if (run === frenzyRun) setFrenzy(false);
+        if (run !== frenzyRun) return;
+        meow.calm();
+        setFrenzy(false);
       };
       if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
         frenzyTimer = window.setTimeout(done, FRENZY_MS);
