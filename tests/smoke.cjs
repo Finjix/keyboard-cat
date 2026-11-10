@@ -591,7 +591,7 @@ const path = require("node:path");
     if (
       !trayState.alive ||
       trayState.bounds.width <= 0 ||
-      trayState.labels.join(",") !== "开机自启,调试,,退出"
+      trayState.labels.join(",") !== "开机自启,,退出"
     )
       throw Error("Native tray icon and settings menu must be available");
     const trayClick = (id) =>
@@ -673,19 +673,16 @@ const path = require("node:path");
       meowsBeforeReminder + 1
     )
       throw Error("Repeated acknowledgement must not play another meow");
-    // 托盘「调试」：按顺序切换面板造型，休息造型随休息提醒一起出现。
+    // Test-only preview actions cover panel looks without exposing tray debug controls.
     const panelShown = (id) =>
       page.waitForSelector(`.stats-display[data-panel="${id}"]`, {
         timeout: 2000,
       });
-    const trayLabel = (id) =>
-      app.evaluate(
-        (_, id) => globalThis.__trayMenu.getMenuItemById(id).label,
-        id,
-      );
+    const previewPanel = (action) =>
+      page.evaluate((action) => window.mengshu.interact(action), action);
     if ((await page.locator('.stats-display[data-panel="normal"]').count()) !== 1)
       throw Error("Stats panel must start in its normal look");
-    await trayClick("debug-panel");
+    await previewPanel("debug-panel");
     await panelShown("fun-0");
     const panelState = await page.evaluate(() => window.mengshu.snapshot());
     const panelRemaining = panelState.panel.until - Date.now();
@@ -693,13 +690,11 @@ const path = require("node:path");
       throw Error("A panel look must last ten minutes");
     if (panelState.reminderUntil)
       throw Error("A fun panel look must not raise the rest reminder");
-    await trayClick("debug-panel");
+    await previewPanel("debug-panel");
     await panelShown("fun-1");
-    if (!(await trayLabel("debug-panel")).includes("3/30"))
-      throw Error("Tray debug label must show the next panel look");
-    await trayClick("debug-panel-off");
+    await previewPanel("debug-panel-off");
     await panelShown("normal");
-    await trayClick("debug-rest");
+    await previewPanel("debug-rest");
     await page.waitForSelector(".rest-speech");
     await panelShown("rest-0");
     await click(".rest-dismiss");
@@ -722,7 +717,7 @@ const path = require("node:path");
       for (const mode of ["fun", "rest"])
         for (let i = mode === "fun" ? 2 : 1; i <= 30; i++) {
           const want = `${mode}-${i % 30}`;
-          await trayClick(mode === "fun" ? "debug-panel" : "debug-rest");
+          await previewPanel(mode === "fun" ? "debug-panel" : "debug-rest");
           await panelShown(want);
           await page.waitForTimeout(700);
           const [running, height] = await page.evaluate(() => {
@@ -736,7 +731,7 @@ const path = require("node:path");
           });
         }
       await page.evaluate(() => window.mengshu.interact("dismiss"));
-      await trayClick("debug-panel-off");
+      await previewPanel("debug-panel-off");
     }
     const original = (await page.evaluate(() => window.mengshu.snapshot()))
       .settings.autoStart;

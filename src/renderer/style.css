@@ -54,9 +54,11 @@ body {
 }
 .paw {
   position: absolute;
-  width: 174px;
-  height: 184px;
-  object-fit: contain;
+  /* Keep each cutout's previous visible width, with a longer forearm.
+     The bottom anchor in pawStyle keeps the toes on the same key. */
+  width: 156.62px;
+  height: 244px;
+  object-fit: fill;
   transform-origin: 50% 100%;
   pointer-events: none;
   transition:
@@ -71,6 +73,7 @@ body {
   filter: brightness(0.84) saturate(0.86) drop-shadow(0 5px 3px #1b25182b);
 }
 .paw.right {
+  width: 143.75px;
   animation-duration: 6.6s;
   animation-delay: -2.1s;
 }

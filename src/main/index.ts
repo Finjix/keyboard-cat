@@ -67,7 +67,7 @@ let storePath = "",
 let speechTimer: ReturnType<typeof setTimeout> | undefined;
 let tray: Tray | undefined;
 let rendererCrashes: number[] = [];
-// Tray debug walks the looks in order so every one can be checked by hand.
+// Smoke-only preview support; no debug controls appear in the tray.
 const debugNext = { fun: 0, rest: 0 };
 function debugPanel(mode: "fun" | "rest") {
   const index = debugNext[mode];
@@ -75,7 +75,6 @@ function debugPanel(mode: "fun" | "rest") {
   if (mode === "rest") engine.remind(Date.now(), index);
   else engine.showPanel("fun", Date.now(), index);
   publish();
-  refreshTrayMenu();
 }
 function refreshTrayMenu() {
   tray?.setContextMenu(
@@ -86,30 +85,6 @@ function refreshTrayMenu() {
         type: "checkbox",
         checked: settings.autoStart,
         click: () => update({ autoStart: !settings.autoStart }),
-      },
-      {
-        id: "debug",
-        label: "调试",
-        submenu: [
-          {
-            id: "debug-panel",
-            label: `面板特效（下一个 ${debugNext.fun + 1}/${PANEL_EFFECT_COUNT}）`,
-            click: () => debugPanel("fun"),
-          },
-          {
-            id: "debug-rest",
-            label: `工作满 1 小时（休息特效 ${debugNext.rest + 1}/${PANEL_EFFECT_COUNT}）`,
-            click: () => debugPanel("rest"),
-          },
-          {
-            id: "debug-panel-off",
-            label: "面板恢复正常",
-            click: () => {
-              engine.panel = null;
-              publish();
-            },
-          },
-        ],
       },
       { type: "separator" },
       { id: "quit", label: "退出", click: () => app.quit() },
@@ -351,6 +326,12 @@ function interact(action: string) {
     publish();
     if (acknowledged && settings.visible) send("meow");
     return;
+  } else if (
+    process.argv.includes("--smoke") &&
+    ["debug-panel", "debug-rest", "debug-panel-off"].includes(action)
+  ) {
+    if (action === "debug-panel-off") engine.panel = null;
+    else debugPanel(action === "debug-rest" ? "rest" : "fun");
   } else if (action === "debug-hour" && process.argv.includes("--smoke"))
     // Test-only shortcut for the hourly reminder; no longer in the tray.
     engine.remind(Date.now());
