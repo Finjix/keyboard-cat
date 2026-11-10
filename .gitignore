@@ -4,3 +4,4 @@ release/
 *.log
 __pycache__/
 *.pyc
+promo/work/
