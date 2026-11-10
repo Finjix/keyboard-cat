@@ -18,6 +18,12 @@ const path = require("node:path");
   try {
     const page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
+    // The window spans the work area; previews show only the scene.
+    const sceneClip = () =>
+      page.evaluate(() => {
+        const r = document.querySelector(".scene").getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
     await page.waitForSelector(".pet-speech");
     if ((await app.windows()).length !== 1)
       throw Error("Unexpected settings/taskbar window");
@@ -51,6 +57,7 @@ const path = require("node:path");
       );
     await page.screenshot({
       path: "docs/startup-preview.png",
+      clip: await sceneClip(),
       omitBackground: true,
     });
     await page.waitForTimeout(
@@ -184,6 +191,7 @@ const path = require("node:path");
     await page.waitForTimeout(250);
     await page.screenshot({
       path: "docs/rest-pose-preview.png",
+      clip: await sceneClip(),
       omitBackground: true,
     });
     await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -337,6 +345,7 @@ const path = require("node:path");
     await page.waitForTimeout(180);
     await page.screenshot({
       path: "docs/scene-preview.png",
+      clip: await sceneClip(),
       omitBackground: true,
     });
 
@@ -367,6 +376,7 @@ const path = require("node:path");
         throw Error("Pressed keys must not get a colour block: " + pressedLook);
       await page.screenshot({
         path: "docs/keypress-preview.png",
+        clip: await sceneClip(),
         omitBackground: true,
       });
     } finally {
@@ -442,6 +452,120 @@ const path = require("node:path");
       speechState.speechUntil
     )
       throw Error("A fresh click after expiry must allow new dialogue");
+    // Click bounce and rapid-click frenzy. Let the earlier clicks age out of
+    // the frenzy window so this run starts from zero.
+    await page.waitForTimeout(1700);
+    const scriptedMotion = (selector) =>
+      page.evaluate(
+        (sel) =>
+          document
+            .querySelector(sel)
+            .getAnimations()
+            .filter(
+              (a) => !(a instanceof CSSAnimation) && a.playState === "running",
+            ).length,
+        selector,
+      );
+    await click(".cat", 0.3, 0.4);
+    if (!(await scriptedMotion(".cat")))
+      throw Error("A cat click must bounce the cat");
+    if (await page.locator(".scene.frenzy").count())
+      throw Error("A single click must not start the frenzy");
+    await page.waitForTimeout(1700);
+    const homeCat = await page.locator(".cat").boundingBox();
+    const homeWindow = await page.evaluate(() => [innerWidth, innerHeight]);
+    const frenzyEvents = await page.evaluate(() => window.__meowEvents);
+    // Record the scene's on-screen scale every frame: any frame where it
+    // changes is a visible flash while the window grows or shrinks.
+    await page.evaluate(() => {
+      const scene = document.querySelector(".scene");
+      window.__sceneScales = [];
+      window.__probe = true;
+      const tick = () => {
+        const r = scene.getBoundingClientRect();
+        window.__sceneScales.push(Math.round(r.width));
+        if (window.__probe) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    // Pinned roll: the first click is a plain pet and must not meow itself.
+    for (let i = 0; i < 5; i++) await catClickWithRandom(0.5);
+    await page.waitForSelector(".scene.frenzy", { timeout: 1000 });
+    await page.waitForTimeout(500);
+    for (const sel of [".cat", ".keyboard", ".paw", ".paw.right"])
+      if (!(await scriptedMotion(sel)))
+        throw Error(`The frenzy must send ${sel} running`);
+    // The first of the five clicks opened a pet bubble; the frenzy closes it.
+    const frenzyState = await page.evaluate(() => window.mengshu.snapshot());
+    if (
+      frenzyState.speech ||
+      frenzyState.speechUntil ||
+      (await page.locator(".pet-speech").count())
+    )
+      throw Error("The frenzy must close the speech bubble");
+    if ((await page.evaluate(() => window.__meowEvents)) !== frenzyEvents + 1)
+      throw Error("The frenzy must meow exactly once");
+    await page.waitForTimeout(1500);
+    await page.screenshot({
+      path: "docs/frenzy-preview.png",
+      omitBackground: true,
+    });
+    await click(".cat", 0.3, 0.4);
+    await page.evaluate(() => window.mengshu.interact("pet"));
+    await page.waitForTimeout(150);
+    if (
+      (await page.evaluate(() => window.mengshu.snapshot())).speech ||
+      (await page.locator(".pet-speech").count())
+    )
+      throw Error("No bubble may open during the frenzy");
+    await page.waitForFunction(
+      () => !document.querySelector(".scene.frenzy"),
+      null,
+      { timeout: 8000 },
+    );
+    // The window already covers the work area: a frenzy never resizes it.
+    if (
+      (await page.evaluate(() => [innerWidth, innerHeight])).join() !==
+      homeWindow.join()
+    )
+      throw Error("A frenzy must not resize the window");
+    await page.waitForTimeout(400);
+    const scales = await page.evaluate(() => {
+      window.__probe = false;
+      return [...new Set(window.__sceneScales)];
+    });
+    if (scales.length !== 1)
+      throw Error("The scene must never rescale during a frenzy: " + scales);
+    for (const sel of [".cat", ".keyboard", ".paw", ".paw.right"])
+      if (await scriptedMotion(sel))
+        throw Error(`${sel} must be back home when the frenzy ends`);
+    const backCat = await page.locator(".cat").boundingBox();
+    if (
+      Math.abs(backCat.x - homeCat.x) > 2 ||
+      Math.abs(backCat.y - homeCat.y) > 6 ||
+      Math.abs(backCat.width - homeCat.width) > 1
+    )
+      throw Error("The cat must land exactly where it started");
+    // A fresh key press bounces the cat with a 2.2% chance.
+    const keyBounce = async (roll, keycode) => {
+      await page.evaluate((roll) => {
+        window.__random = Math.random;
+        Math.random = () => roll;
+      }, roll);
+      try {
+        await send({ type: "keydown", keycode });
+        await page.waitForTimeout(40);
+        return await scriptedMotion(".cat");
+      } finally {
+        await send({ type: "keyup", keycode });
+        await page.evaluate(() => (Math.random = window.__random));
+        await page.waitForTimeout(400);
+      }
+    };
+    if (await keyBounce(0.022, 30))
+      throw Error("Key presses at or above 2.2% must not bounce the cat");
+    if (!(await keyBounce(0.0219, 31)))
+      throw Error("Key presses below 2.2% must bounce the cat");
     if (await page.locator(".gear, .settings-menu").count())
       throw Error("Desktop gear and menu must be removed");
     await app.evaluate(({ Tray }) => {
@@ -500,7 +624,7 @@ const path = require("node:path");
     const reminderRemaining = afterDebug.reminderUntil - Date.now();
     if (reminderRemaining < 1799000 || reminderRemaining > 1800000)
       throw Error(
-        "Debug hour must trigger the regular 30-minute rest reminder",
+        "Debug hour must trigger the regular 30-minute rest reminder ",
       );
     if (
       afterDebug.daily.workMs - beforeDebug.daily.workMs > 5000 ||
@@ -527,6 +651,7 @@ const path = require("node:path");
       throw Error("Rest reminder must stay silent until acknowledged");
     await page.screenshot({
       path: "docs/rest-reminder-preview.png",
+      clip: await sceneClip(),
       omitBackground: true,
     });
     await click(".rest-message");
@@ -624,6 +749,7 @@ const path = require("node:path");
       throw Error("Key pops must never reveal the real typed key");
     await page.screenshot({
       path: "docs/key-pops-preview.png",
+      clip: await sceneClip(),
       omitBackground: true,
     });
     if ((await page.evaluate(() => window.__meowCount)) !== meowsBeforePops)

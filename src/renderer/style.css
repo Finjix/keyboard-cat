@@ -17,11 +17,10 @@ body {
 }
 .scene {
   position: absolute;
-  left: 50%;
-  top: 50%;
   width: 1440px;
   height: 960px;
-  transform-origin: center;
+  /* left/top/scale come from sceneLayout(). */
+  transform-origin: 0 0;
 }
 .cat {
   position: absolute;

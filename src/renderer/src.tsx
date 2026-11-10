@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { defaults, Snapshot, Input } from "../shared/types";
+import { defaults, Snapshot, Input, Action } from "../shared/types";
+import { sceneArena, sceneLayout } from "../shared/scene-layout";
 import { keys } from "../shared/keyboard";
 import { keySurface } from "../shared/keyboard-art";
 import { keyboardView, projectKeyboardPoint } from "../shared/keyboard-view";
@@ -13,6 +15,8 @@ import { createMeowPlayer } from "./meow";
 import { createKeyPopLayer } from "./key-pops";
 import "./key-pops.css";
 import { HeldKeys } from "../shared/held-keys";
+import { ClickFrenzy, FRENZY_MS } from "../shared/click-frenzy";
+import { createCatMotion, KEY_BOUNCE_CHANCE } from "./cat-motion";
 const keyByCode = new Map(keys.map((k) => [k.code, k]));
 // Invisible anchors for paws and tests. Memoized so a held key's auto-repeat
 // or the once-a-second state push does not re-render all 104 of them.
@@ -38,6 +42,7 @@ const KeyAnchors = React.memo(function KeyAnchors({
   );
 });
 const initial: Snapshot = {
+  stage: null,
   daily: { date: "", keys: 0, clicks: 0, workMs: 0 },
   continuousMs: 0,
   reminderUntil: 0,
@@ -54,9 +59,12 @@ function App() {
   const scene = useRef<HTMLDivElement>(null);
   const [s, set] = useState(initial),
     [pressed, setPressed] = useState<number[]>([]),
-    [size, setSize] = useState({ w: innerWidth, h: innerHeight });
+    [size, setSize] = useState({ w: innerWidth, h: innerHeight }),
+    [frenzy, setFrenzy] = useState(false),
+    stage = useRef(s.stage);
+  stage.current = s.stage;
   function performAction(action: string) {
-    window.mengshu.interact(action as "pet" | "dismiss" | "debug-hour");
+    window.mengshu.interact(action as Action);
   }
   useEffect(() => {
     const meow = createMeowPlayer();
@@ -115,6 +123,7 @@ function App() {
         const now = performance.now();
         if (held.down(code, now)) {
           strokes.push(now);
+          if (Math.random() < KEY_BOUNCE_CHANCE) motion.bounce();
           // Tick at most ten times per second while typing and settling.
           if (motionTimer === undefined) {
             updatePace();
@@ -141,8 +150,39 @@ function App() {
       stopSweep();
       applyPace();
     };
-    const resize = () => setSize({ w: innerWidth, h: innerHeight });
+    const resize = () => {
+      // Lay out in this very frame, not one frame late at the wrong spot.
+      flushSync(() => setSize({ w: innerWidth, h: innerHeight }));
+    };
     let mask: CanvasRenderingContext2D | null = null;
+    const catClicks = new ClickFrenzy();
+    const motion = createCatMotion(scene.current!);
+    let frenzyTimer: number | undefined;
+    let frenzyRun = 0;
+    const startFrenzy = async () => {
+      const run = ++frenzyRun;
+      const started = performance.now();
+      setFrenzy(true);
+      window.dispatchEvent(new Event("key-pops-frenzy"));
+      performAction("frenzy");
+      const done = () => {
+        if (run === frenzyRun) setFrenzy(false);
+      };
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        frenzyTimer = window.setTimeout(done, FRENZY_MS);
+        return;
+      }
+      // A short shake in place, then everyone takes off. The window already
+      // covers the whole work area, so nothing is resized.
+      motion.windup();
+      await new Promise((r) => (frenzyTimer = window.setTimeout(r, 300)));
+      if (run !== frenzyRun) return;
+      const arena = sceneArena(innerWidth, innerHeight, stage.current);
+      await motion.roam(arena, FRENZY_MS - (performance.now() - started));
+      if (run !== frenzyRun) return;
+      done();
+      performAction("frenzy-end");
+    };
     const click = (e: Event) => {
       const p = (e as CustomEvent).detail;
       const el = document
@@ -179,8 +219,17 @@ function App() {
         )
           return;
       }
-      if (el?.dataset.action === "pet")
+      if (el?.dataset.action === "pet") {
+        const kind = catClicks.click(performance.now());
+        // Mid-frenzy clicks neither count, pet, nor spawn hearts.
+        if (kind === "busy" || motion.busy) return;
+        if (kind === "frenzy") {
+          void startFrenzy();
+          return;
+        }
+        motion.bounce();
         window.dispatchEvent(new CustomEvent("key-pops-pet", { detail: p }));
+      }
       if (el) performAction(el.dataset.action!);
     };
     window.addEventListener("desktop-click", click);
@@ -193,6 +242,9 @@ function App() {
       input();
       stopMotionTimer();
       stopSweep();
+      window.clearTimeout(frenzyTimer);
+      frenzyRun++;
+      motion.reset();
       window.removeEventListener("desktop-click", click);
       window.removeEventListener("reset-input", reset);
       window.removeEventListener("resize", resize);
@@ -209,23 +261,27 @@ function App() {
       layer.pet(p.x, p.y);
     };
     const reset = () => layer.reset();
+    const frenzy = () => layer.frenzy();
     window.addEventListener("key-pops-pet", pet);
+    window.addEventListener("key-pops-frenzy", frenzy);
     window.addEventListener("reset-input", reset);
     return () => {
       offInput();
       window.removeEventListener("key-pops-pet", pet);
+      window.removeEventListener("key-pops-frenzy", frenzy);
       window.removeEventListener("reset-input", reset);
       layer.destroy();
     };
   }, []);
-  const scale = Math.min(size.w / 1440, size.h / 960),
+  const layout = sceneLayout(size.w, size.h, s.stage),
     latest = (left: boolean) =>
       [...pressed]
         .reverse()
         .map((c) => keyByCode.get(c))
         .find((k) => k && (left ? k.x < 7.5 : k.x >= 7.5));
-  const l = latest(true),
-    r = latest(false);
+  // While frenzied the keyboard is kicked away: paws flail, not type.
+  const l = frenzy ? undefined : latest(true),
+    r = frenzy ? undefined : latest(false);
   // Side flags refer to the screen. The front-facing cat's right paw is on
   // screen-left (R), and its left paw is on screen-right (main keyboard +/=).
   const restR = keyByCode.get(19)!;
@@ -253,79 +309,88 @@ function App() {
     };
   };
   return (
-    <div
-      ref={scene}
-      className="scene"
-      style={{ transform: `translate(-50%,-50%) scale(${scale})` }}
-    >
-      <img className="cat" src={cat} data-action="pet" draggable={false} />
-      <div className="desk-shadow" />
+    <>
       <div
-        className="keyboard"
+        ref={scene}
+        className={frenzy ? "scene frenzy" : "scene"}
         style={{
-          left: keyboardView.left,
-          top: keyboardView.top,
-          width: keyboardView.width,
-          height: keyboardView.height,
+          left: layout.x,
+          top: layout.y,
+          transform: `scale(${layout.k})`,
+          // Until main says where the scene goes, it would be centred and
+          // oversized in the full-work-area window: keep it hidden.
+          visibility: s.stage ? undefined : "hidden",
         }}
       >
+        <img className="cat" src={cat} data-action="pet" draggable={false} />
+        <div className="desk-shadow" />
+        <div
+          className="keyboard"
+          style={{
+            left: keyboardView.left,
+            top: keyboardView.top,
+            width: keyboardView.width,
+            height: keyboardView.height,
+          }}
+        >
+          <img
+            className="keyboard-art"
+            src={keyboardArt}
+            alt="透视立体键盘"
+            draggable={false}
+          />
+          <section className="stats" aria-label="今日统计">
+            <div className="stats-display">
+              <div className="metric">
+                <span>敲薯</span>
+                <strong>{s.daily.keys.toLocaleString()} 次</strong>
+              </div>
+              <div className="metric">
+                <span>今日工作</span>
+                <strong>{duration(s.daily.workMs)}</strong>
+              </div>
+            </div>
+            {(s.desktopError || s.inputError) && (
+              <aside>{s.desktopError || s.inputError}</aside>
+            )}
+          </section>
+          <KeyAnchors pressed={pressed} />
+        </div>
         <img
-          className="keyboard-art"
-          src={keyboardArt}
-          alt="透视立体键盘"
+          className={"paw" + (l ? " is-active" : "")}
+          src={leftPaw}
+          alt="猫的右爪"
+          style={pawStyle(l)}
           draggable={false}
         />
-        <section className="stats" aria-label="今日统计">
-          <div className="stats-display">
-            <div className="metric">
-              <span>敲薯</span>
-              <strong>{s.daily.keys.toLocaleString()} 次</strong>
-            </div>
-            <div className="metric">
-              <span>今日工作</span>
-              <strong>{duration(s.daily.workMs)}</strong>
-            </div>
-          </div>
-          {(s.desktopError || s.inputError) && (
-            <aside>{s.desktopError || s.inputError}</aside>
-          )}
-        </section>
-        <KeyAnchors pressed={pressed} />
-      </div>
-      <img
-        className={"paw" + (l ? " is-active" : "")}
-        src={leftPaw}
-        alt="猫的右爪"
-        style={pawStyle(l)}
-        draggable={false}
-      />
-      <img
-        className={"paw right" + (r ? " is-active" : "")}
-        src={rightPaw}
-        alt="猫的左爪"
-        style={pawStyle(r, true)}
-        draggable={false}
-      />
+        <img
+          className={"paw right" + (r ? " is-active" : "")}
+          src={rightPaw}
+          alt="猫的左爪"
+          style={pawStyle(r, true)}
+          draggable={false}
+        />
 
-      {s.reminderUntil > 0 ? (
-        <div className="speech rest-speech" role="status">
-          <div className="rest-message">{s.reminderText}</div>
-          <div className="rest-footer">
-            <span>休息一下吧~</span>
-            <button
-              className="rest-dismiss"
-              data-action="dismiss"
-              onClick={() => performAction("dismiss")}
-            >
-              我知道了
-            </button>
+        {s.reminderUntil > 0 ? (
+          <div className="speech rest-speech" role="status">
+            <div className="rest-message">{s.reminderText}</div>
+            <div className="rest-footer">
+              <span>休息一下吧~</span>
+              <button
+                className="rest-dismiss"
+                data-action="dismiss"
+                onClick={() => performAction("dismiss")}
+              >
+                我知道了
+              </button>
+            </div>
           </div>
-        </div>
-      ) : s.speech ? (
-        <div className="speech pet-speech">{s.speech}</div>
-      ) : null}
-      <div ref={popLayer} className="pop-layer" aria-hidden="true" />
-    </div>
+        ) : s.speech ? (
+          <div className="speech pet-speech">{s.speech}</div>
+        ) : null}
+        <div ref={popLayer} className="pop-layer" aria-hidden="true" />
+      </div>
+    </>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);

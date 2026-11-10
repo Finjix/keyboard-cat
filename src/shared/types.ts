@@ -23,6 +23,7 @@ export interface Daily {
   workMs: number;
 }
 export interface Snapshot {
+  stage: Stage | null;
   daily: Daily;
   continuousMs: number;
   reminderUntil: number;
@@ -40,13 +41,22 @@ export type Input = {
   x?: number;
   y?: number;
 };
+export type Action = "pet" | "frenzy" | "frenzy-end" | "dismiss" | "debug-hour";
+/** Where the scene sits inside the full-work-area window (CSS px). */
+export interface Stage {
+  x: number;
+  y: number;
+  width: number;
+  windowWidth: number;
+  windowHeight: number;
+}
 export interface Bridge {
   snapshot: () => Promise<Snapshot>;
   subscribe: (fn: (s: Snapshot) => void) => () => void;
   input: (fn: (e: Input) => void) => () => void;
   meow: (fn: () => void) => () => void;
   update: (s: Partial<Settings>) => Promise<void>;
-  interact: (action: "pet" | "dismiss" | "debug-hour") => void;
+  interact: (action: Action) => void;
   quit: () => void;
 }
 declare global {

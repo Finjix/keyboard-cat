@@ -166,3 +166,10 @@ export function sceneBounds(settings: {
     height,
   };
 }
+/** The window: the whole work area of the scene's display. */
+export function stageBounds(settings: { displayId: number | null }) {
+  const d =
+    screen.getAllDisplays().find((x) => x.id === settings.displayId) ||
+    screen.getPrimaryDisplay();
+  return { ...d.workArea };
+}

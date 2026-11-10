@@ -21,9 +21,10 @@ import {
 import { performance } from "node:perf_hooks";
 import { Engine } from "./engine";
 import { petLines, PET_SPEECH_MS, STARTUP_SPEECH } from "./pet-lines";
+import { FRENZY_MS } from "../shared/click-frenzy";
 import { fastTypingLines } from "./typing-burst";
-import { Desktop, sceneBounds } from "./desktop";
-import { defaults, Settings, Snapshot, Input } from "../shared/types";
+import { Desktop, sceneBounds, stageBounds } from "./desktop";
+import { defaults, Settings, Snapshot, Input, Stage } from "../shared/types";
 app.setName("懵薯");
 app.setAppUserModelId("cn.mengshu.desktop");
 app.setPath(
@@ -106,7 +107,24 @@ const send = (channel: string, data?: unknown) => {
   if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
     win.webContents.send(channel, data);
 };
+// The window always covers the whole work area so a frenzy can use all of it
+// without resizing (a resize that moves the window's corner shows one stale
+// frame: the flash). The scene itself is drawn at its usual spot inside.
+function stage(): Stage {
+  const home = sceneBounds(settings),
+    full = stageBounds(settings);
+  const z =
+    win && !win.isDestroyed() ? win.webContents.getZoomFactor() || 1 : 1;
+  return {
+    x: (home.x - full.x) / z,
+    y: (home.y - full.y) / z,
+    width: home.width / z,
+    windowWidth: full.width / z,
+    windowHeight: full.height / z,
+  };
+}
 const state = (): Snapshot => ({
+  stage: stage(),
   daily: engine.daily,
   continuousMs: engine.continuousMs,
   reminderUntil: engine.reminderUntil,
@@ -149,7 +167,7 @@ function load(w: BrowserWindow, query?: string) {
 }
 function createScene() {
   win = new BrowserWindow({
-    ...sceneBounds(settings),
+    ...stageBounds(settings),
     show: false,
     frame: false,
     transparent: true,
@@ -202,16 +220,16 @@ function attach() {
   try {
     win.hide();
     desktop.detach(win);
-    win.setBounds(sceneBounds(settings));
+    win.setBounds(stageBounds(settings));
     if (settings.visible) win.showInactive();
-    desktop.attach(win, sceneBounds(settings));
+    desktop.attach(win, stageBounds(settings));
     win.setSkipTaskbar(true);
     desktopError = "";
     log(
       "desktop attached " +
         JSON.stringify({
           native: desktop.bounds(win),
-          desired: sceneBounds(settings),
+          desired: stageBounds(settings),
           displays: screen.getAllDisplays(),
         }),
     );
@@ -265,8 +283,10 @@ function clearSpeech() {
   speech = "";
   speechUntil = 0;
 }
+// No bubble at all while the cat is in a frenzy.
+let frenzyUntil = 0;
 function say(text: string, duration = PET_SPEECH_MS) {
-  if (engine.reminderUntil > Date.now()) return;
+  if (engine.reminderUntil > Date.now() || frenzyUntil > Date.now()) return;
   speech = text;
   speechUntil = Date.now() + duration;
   clearTimeout(speechTimer);
@@ -286,7 +306,15 @@ function interact(action: string) {
   } else if (action === "debug-hour" && process.argv.includes("--smoke"))
     // Test-only shortcut for the hourly reminder; no longer in the tray.
     engine.remind(Date.now());
-  else if (action === "pet") {
+  else if (action === "frenzy") {
+    // Close any bubble for the whole frenzy; the rest reminder stays.
+    clearSpeech();
+    frenzyUntil = Date.now() + FRENZY_MS + 2000;
+    if (settings.visible) send("meow");
+  } else if (action === "frenzy-end") {
+    frenzyUntil = 0;
+    return;
+  } else if (action === "pet") {
     // The sound belongs to a newly accepted bubble, not to every mouse click.
     if (speechUntil > Date.now() || engine.reminderUntil > Date.now()) return;
     say(petLines[Math.floor(Math.random() * petLines.length)]);
@@ -330,7 +358,7 @@ function startInput() {
     if (locked) return;
     if (!settings.paused) {
       const burst = engine.input(e, performance.now(), Date.now());
-      if (burst && settings.visible) {
+      if (burst && settings.visible && frenzyUntil <= Date.now()) {
         const choices = fastTypingLines.filter((line) => line !== lastFastLine);
         lastFastLine = choices[Math.floor(Math.random() * choices.length)];
         say(lastFastLine, 4500);

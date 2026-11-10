@@ -6,6 +6,7 @@ import { projectKeyboardPoint } from "../shared/keyboard-view";
 import { KeyPops } from "../shared/key-pops";
 import type { Input } from "../shared/types";
 import { HeldKeys } from "../shared/held-keys";
+import { FRENZY_MS } from "../shared/click-frenzy";
 
 const MAX_POPS = 60;
 const PLAIN_GAP_MS = 35;
@@ -35,6 +36,8 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
   const pops = new KeyPops();
   const held = new HeldKeys();
   let lastPlain = 0;
+  // While the keyboard is kicked away, key pops would float over empty desk.
+  let quietUntil = 0;
 
   const centre = (code: number) => {
     const key = keys.find((k) => k.code === code);
@@ -84,6 +87,7 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
       }
       const pop = pops.press(e.keycode, held);
       held.down(e.keycode, now);
+      if (now < quietUntil) return;
       if (pop.kind === "plain") {
         if (now - lastPlain < PLAIN_GAP_MS) return;
         lastPlain = now;
@@ -112,6 +116,10 @@ export function createKeyPopLayer(layer: HTMLElement, scene: HTMLElement) {
           y,
           1000,
         );
+    },
+    /** Frenzy: the keyboard is away, so keycap pops pause meanwhile. */
+    frenzy() {
+      quietUntil = performance.now() + FRENZY_MS;
     },
     reset() {
       held.clear();
