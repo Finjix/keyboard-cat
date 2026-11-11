@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Engine, HOUR, PANEL_EVERY, PANEL_FOR } from "../src/main/engine";
+import { Engine, BUBBLE, HOUR, PANEL_EVERY, PANEL_FOR } from "../src/main/engine";
 import { PANEL_EFFECT_COUNT } from "../src/shared/types";
 import { funLooks, restLooks, panelLook } from "../src/renderer/panel-effects";
 
@@ -40,7 +40,7 @@ describe("统计面板造型", () => {
     workUntil(e, 0, HOUR);
     expect(e.panel).toMatchObject({
       mode: "rest",
-      until: base + HOUR + PANEL_FOR,
+      until: base + HOUR + BUBBLE,
     });
     e.dismiss();
     expect(e.reminderUntil).toBe(0);

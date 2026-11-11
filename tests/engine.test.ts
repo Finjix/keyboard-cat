@@ -1,11 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { Engine, IDLE, HOUR, BUBBLE } from "../src/main/engine";
+import { Engine, IDLE, HOUR, BUBBLE, PANEL_EVERY } from "../src/main/engine";
 import { keys } from "../src/shared/keyboard";
 import { keySurface } from "../src/shared/keyboard-art";
 import { restLines } from "../src/main/rest-lines";
 import { HeldKeys, STALE_KEY_MS } from "../src/shared/held-keys";
 const base = new Date(2026, 10, 9, 12).getTime();
 describe("work engine", () => {
+  it("keeps the rest look until 我知道了, even past a fun turn", () => {
+    const e = new Engine(0, base);
+    let t = 0;
+    const work = (to: number) => {
+      for (; t <= to; t += 60_000) e.input({ type: "mousemove" }, t, base + t);
+    };
+    work(HOUR);
+    expect(e.panel?.mode).toBe("rest");
+    // Past the ordinary ten minutes and the 80-minute fun turn.
+    work(HOUR + PANEL_EVERY);
+    expect(e.panel?.mode).toBe("rest");
+    e.dismiss();
+    expect(e.panel).toBeNull();
+    work(HOUR + PANEL_EVERY * 2);
+    expect(e.panel?.mode).toBe("fun");
+  });
   it("maps all 104 keys onto the generated keyboard image", () => {
     for (const key of keys) {
       const r = keySurface(key);

@@ -76,7 +76,9 @@ export class Engine {
       const step = Math.floor(this.continuousMs / PANEL_EVERY);
       if (step > this.panelStep) {
         this.panelStep = step;
-        if (step % 3 !== 0) this.showPanel("fun", wall);
+        // The rest look holds the panel until "我知道了"; fun waits its turn.
+        if (step % 3 !== 0 && this.panel?.mode !== "rest")
+          this.showPanel("fun", wall);
       }
       if (mono - this.last >= IDLE) {
         this.last = null;
@@ -115,7 +117,12 @@ export class Engine {
       if (last >= 0 && index >= last) index++;
     }
     this.lastPanel[mode] = index;
-    this.panel = { mode, index, until: wall + PANEL_FOR };
+    // The rest look lasts as long as the reminder itself, not PANEL_FOR.
+    const until =
+      mode === "rest"
+        ? Math.max(this.reminderUntil, wall + PANEL_FOR)
+        : wall + PANEL_FOR;
+    this.panel = { mode, index, until };
   }
   /** "我知道了" also takes the rest look off the panel. */
   dismiss() {
