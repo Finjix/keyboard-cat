@@ -1,6 +1,6 @@
 {
   "name": "mengshu",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "懵薯 · 和你一起认真生活的猫",
   "main": "out/main/index.js",
   "author": "Mengshu",
@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "predist": "node scripts/prepare-release.cjs --clean",
-    "dist": "npm run build && electron-builder --win zip --x64",
+    "dist": "npm run build && electron-builder --win dir --x64",
     "test:smoke": "node tests/smoke.cjs",
-    "postdist": "node scripts/copy-release.cjs"
+    "postdist": "node scripts/finalize-release.cjs"
   },
   "dependencies": {
     "koffi": "3.3.7",
@@ -49,7 +49,7 @@
       "node_modules/uiohook-napi/**/*"
     ],
     "win": {
-      "target": "zip",
+      "target": "dir",
       "icon": "build/icon.ico",
       "signExecutable": false
     },
@@ -61,7 +61,6 @@
         "from": "build/icon.ico"
       }
     ],
-    "artifactName": "懵薯-${version}-Windows-x64.${ext}",
     "electronLanguages": [
       "zh-CN",
       "en-US"
